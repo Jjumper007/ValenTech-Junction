@@ -13,10 +13,17 @@ namespace Aya;
 public sealed class Workbench
 {
     private string? work;
+    private string? oldWork;
+    private string? swarmWork;
 
     public required Git Git { get; init; }
 
     public required string HeadSha { get; init; }
+
+    public required string BaseSha { get; init; }
+
+    /// <summary>Method names of the tests that came with the change, as opposed to the ones that were already there.</summary>
+    public HashSet<string> NewTests { get; init; } = new(StringComparer.Ordinal);
 
     public required string HeadWorktree { get; init; }
 
@@ -39,6 +46,15 @@ public sealed class Workbench
 
     /// <summary>A second copy of the new code. Files altered here are always put back.</summary>
     public string Work => this.work ??= this.Git.EnsureWorktree(this.HeadSha, Path.Combine(this.WorktreesRoot, this.HeadSha[..6] + "work"));
+
+    /// <summary>A scratch copy of the old code, where probes and attack tests are run for comparison.</summary>
+    public string OldWork => this.oldWork ??= this.Git.EnsureWorktree(this.BaseSha, Path.Combine(this.WorktreesRoot, this.BaseSha[..6] + "work"));
+
+    /// <summary>
+    /// A copy of the new code handed to agents that write tests by themselves. Nothing is ever run from it by
+    /// AYA: the test files are taken out of it and run on the other copies.
+    /// </summary>
+    public string SwarmWork => this.swarmWork ??= this.Git.EnsureWorktree(this.HeadSha, Path.Combine(this.WorktreesRoot, this.HeadSha[..6] + "swarm"));
 
     public string? ProjectPath(string name) => this.TestProjects.FirstOrDefault(p => Path.GetFileNameWithoutExtension(p) == name);
 
@@ -122,7 +138,8 @@ public static class MutationRunner
                 "killed" => $"CAUGHT by {mutant.KilledBy.FirstOrDefault()}" + (mutant.KilledByCount > 1 ? $" and {mutant.KilledByCount - 1} more" : string.Empty),
                 "survived" => "NOT NOTICED by any test",
                 "invalid" => "does not compile, discarded",
-                "timeout" => "tests hung, counted as caught",
+                "timeout" => "tests hung: inconclusive",
+                "crashed" => "the test run ended without results: inconclusive",
                 _ => mutant.Status,
             };
             w.Trace.Info($"{mutant.Id,-4} {Path.GetFileName(mutant.File)}:{mutant.Line,-5} {mutant.Description,-24} {verdict}   {mutant.Seconds}s");
@@ -148,7 +165,7 @@ public static class MutationRunner
             }
 
             var run = TestRunner.Run(w.Work, path, w.RunsDir, Path.Combine("mutants", mutant.Id), null, coverage: false, w.SdkFolder, timeoutMs: 8 * 60 * 1000);
-            if (run.ExitCode == -1)
+            if (run.TimedOut)
             {
                 return "timeout";
             }
@@ -158,11 +175,11 @@ public static class MutationRunner
                 return "invalid";
             }
 
-            if (run.Results.Count == 0 && run.ExitCode != 0)
+            // The break did something, but no assertion said so: the run ended without results. Kept apart from
+            // "killed", which claims that a named test failed.
+            if (run.Crashed)
             {
-                mutant.KilledBy = ["(the test run crashed)"];
-                mutant.KilledByCount = 1;
-                return "killed";
+                return "crashed";
             }
 
             var killers = run.Results
@@ -175,6 +192,7 @@ public static class MutationRunner
             {
                 mutant.KilledBy = killers.Take(5).ToList();
                 mutant.KilledByCount = killers.Count;
+                mutant.CaughtByOldTests = killers.Count(k => !w.NewTests.Contains(k));
                 return "killed";
             }
         }
@@ -198,13 +216,21 @@ public sealed class Mutant
     /// <summary>The original code that was altered, on one line.</summary>
     public required string Original { get; init; }
 
-    /// <summary>killed | survived | invalid | not-covered | not-run | timeout.</summary>
+    /// <summary>
+    /// killed: a test that passed now fails. survived: no test noticed. invalid: does not compile.
+    /// not-covered: no test executes the line. not-run: outside the budget. timeout: the tests hung.
+    /// crashed: the run ended without results. Only "killed" means an assertion caught the break.
+    /// </summary>
     public string Status { get; set; } = "not-run";
 
     /// <summary>Tests that passed on the unchanged code and failed with this break.</summary>
     public List<string> KilledBy { get; set; } = new();
 
+    /// <summary>How many tests fail with this break: a measure of how much stops working when the line is wrong.</summary>
     public int KilledByCount { get; set; }
+
+    /// <summary>Of those, how many existed before the change. Zero means only the change's own tests guard the line.</summary>
+    public int CaughtByOldTests { get; set; }
 
     public double Seconds { get; set; }
 }

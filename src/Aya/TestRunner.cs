@@ -22,8 +22,24 @@ public sealed class TestRun
 
     public required string Project { get; init; }
 
-    /// <summary>False when the project did not compile, so no test could run.</summary>
+    /// <summary>False when the compiler reported errors, so no test could run.</summary>
     public bool Built { get; init; }
+
+    /// <summary>The run was stopped at the time limit. Says nothing about the code either way.</summary>
+    public bool TimedOut { get; init; }
+
+    /// <summary>It compiled, but the test runner ended in error without reporting a single result.</summary>
+    public bool Crashed => this.Built && !this.TimedOut && this.Results.Count == 0 && this.ExitCode != 0;
+
+    /// <summary>Too many tests were named to fit a filter, so the whole project ran instead.</summary>
+    public bool FilterDropped { get; init; }
+
+    /// <summary>Why this run gives no evidence, or null when it ran normally.</summary>
+    public string? Problem =>
+        !this.Built ? "did not compile"
+        : this.TimedOut ? "stopped at the time limit"
+        : this.Crashed ? "the test runner ended in error without results"
+        : null;
 
     public int ExitCode { get; init; }
 
@@ -46,6 +62,12 @@ public sealed class TestRun
     public int PassedCount => this.Results.Count(r => r.Passed);
 
     public int FailedCount => this.Results.Count(r => r.Failed);
+
+    /// <summary>Neither passed nor failed: skipped, not executed or inconclusive. Never evidence of anything.</summary>
+    public int SkippedCount => this.Results.Count(r => !r.Passed && !r.Failed);
+
+    public RunSummary Summary() =>
+        new(this.Label, this.Project, this.Built, this.PassedCount, this.FailedCount, this.SkippedCount, this.Results.Count, this.Seconds, this.BuildErrors, this.Problem);
 }
 
 public static partial class TestRunner
@@ -101,7 +123,9 @@ public static partial class TestRunner
         {
             Label = label,
             Project = projectName,
-            Built = errors.Count == 0 && proc.ExitCode != -1,
+            Built = errors.Count == 0,
+            TimedOut = proc.ExitCode == -1,
+            FilterDropped = onlyMethods is { Count: > 60 },
             ExitCode = proc.ExitCode,
             Seconds = Math.Round(clock.Elapsed.TotalSeconds, 1),
             Results = results,

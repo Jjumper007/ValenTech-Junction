@@ -5,155 +5,7 @@ using System.Text.Json.Serialization;
 
 namespace Aya;
 
-public sealed class ChangedSymbol
-{
-    public required string Id { get; init; }
-
-    public required string Display { get; init; }
-
-    public required string Kind { get; init; }
-
-    public required string File { get; init; }
-
-    public required string Project { get; init; }
-
-    public required string Category { get; init; }
-
-    public int Layer { get; init; }
-
-    /// <summary>added | modified.</summary>
-    public required string ChangeKind { get; init; }
-
-    public bool PublicApi { get; init; }
-
-    /// <summary>Test code: a test method, or a helper that lives in a test file.</summary>
-    public bool IsTest { get; init; }
-
-    public List<int> ChangedLines { get; init; } = new();
-
-    public List<int> CoveredLines { get; } = new();
-
-    public List<int> UncoveredLines { get; } = new();
-
-    /// <summary>Tests with a static dependency path to this symbol. An upper bound, not proof they exercise it.</summary>
-    public int ReachingTests { get; set; }
-
-    public List<string> FailingTests { get; } = new();
-
-    /// <summary>Members that depend on this symbol, directly or indirectly, excluding tests.</summary>
-    public int Dependents { get; set; }
-
-    public List<string> PublicDependents { get; } = new();
-
-    /// <summary>verified | partially-verified | unverified | failing | not-measured.</summary>
-    public string Status { get; set; } = "not-measured";
-
-    /// <summary>Deliberate breaks tried on this symbol's changed lines. Empty unless mutation was requested.</summary>
-    public List<Mutant> Mutants { get; } = new();
-}
-
-/// <summary>One test method's result on the new and the old code, for showing tests on the graph.</summary>
-public sealed record TestOutcome(string Project, string Method, string OnNew, string? OnOld, string? Verdict);
-
-public sealed class ProbedTest
-{
-    public required string Name { get; init; }
-
-    public required string Project { get; init; }
-
-    /// <summary>new | modified.</summary>
-    public required string Origin { get; init; }
-
-    public required string OnHead { get; init; }
-
-    /// <summary>Outcome against the old code: Passed | Failed | build-failed | not-run.</summary>
-    public string OnOldCode { get; set; } = "not-run";
-
-    /// <summary>discriminating | non-discriminating | needs-new-code | unknown.</summary>
-    public string Verdict { get; set; } = "unknown";
-}
-
-public sealed record Evidence(string Id, string Kind, string Status, string Claim, string Source, string? Detail = null);
-
-public sealed record Finding(string Topic, string Text);
-
-public sealed record ReadItem(string Depth, string What, string Why, int Lines);
-
-public sealed record RunSummary(string Label, string Project, bool Built, int Passed, int Failed, int Total, double Seconds, List<string> BuildErrors);
-
-public sealed class ReviewResult
-{
-    public string Tool { get; init; } = "aya 0.1.0";
-
-    public string GeneratedAt { get; init; } = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ");
-
-    public required string Repo { get; init; }
-
-    public string? Requirement { get; init; }
-
-    public required string BaseSha { get; init; }
-
-    public required string HeadRef { get; init; }
-
-    public required string HeadSha { get; init; }
-
-    public string Author { get; set; } = string.Empty;
-
-    public string AuthoredAt { get; set; } = string.Empty;
-
-    public string Subject { get; set; } = string.Empty;
-
-    /// <summary>The .NET SDK that built and tested both versions of the code.</summary>
-    public string Sdk { get; set; } = string.Empty;
-
-    /// <summary>The SDK the repository selects, when the review used a different one; otherwise null.</summary>
-    public string? SdkPinnedByRepo { get; set; }
-
-    public List<FileChange> Files { get; set; } = new();
-
-    public List<PatternGroup> Patterns { get; set; } = new();
-
-    public List<string> Projects { get; set; } = new();
-
-    public int GraphNodes { get; set; }
-
-    public int GraphEdges { get; set; }
-
-    public int GraphLayers { get; set; }
-
-    public List<ChangedSymbol> ChangedSymbols { get; set; } = new();
-
-    public List<RunSummary> Runs { get; set; } = new();
-
-    public List<string> Regressions { get; set; } = new();
-
-    public List<ProbedTest> ProbedTests { get; set; } = new();
-
-    public List<Evidence> Evidence { get; set; } = new();
-
-    public List<Finding> NotChecked { get; set; } = new();
-
-    public List<Finding> RefusedToDecide { get; set; } = new();
-
-    public List<ReadItem> ReadingPlan { get; set; } = new();
-
-    public int ChangedLinesTotal { get; set; }
-
-    public int LinesToRead { get; set; }
-
-    public List<string> Limits { get; set; } = new();
-
-    public List<Mutant> Mutants { get; set; } = new();
-
-    public List<ProposedTest> ProposedTests { get; set; } = new();
-
-    /// <summary>Who wrote the proposed tests, e.g. "claude-opus-5-5 (effort medium)". Null when none were asked for.</summary>
-    public string? TestWriter { get; set; }
-
-    public List<TestOutcome> Tests { get; set; } = new();
-}
-
-public static class ReviewCommand
+public static partial class ReviewCommand
 {
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -224,7 +76,7 @@ public static class ReviewCommand
         trace.Step("Find the projects the change touches and the test projects that depend on them");
         var references = ProjectMap.References(headWt);
         var touched = files
-            .Where(f => f.Status != "D" && Path.GetExtension(f.Path) is ".cs" or ".tt" or ".csproj")
+            .Where(f => Path.GetExtension(f.Path) is ".cs" or ".tt" or ".csproj")
             .Select(f => ProjectMap.NearestProject(headWt, f.Path))
             .Where(p => p is not null)
             .Select(p => p!)
@@ -384,11 +236,12 @@ public static class ReviewCommand
                     foreach (var t in group)
                     {
                         var r = run.Results.FirstOrDefault(x => x.Name == t.Name);
-                        (t.OnOldCode, t.Verdict) = (run.Built, r) switch
+                        (t.OnOldCode, t.Verdict) = (run.Built, run.Problem, r) switch
                         {
-                            (false, _) => ("build-failed", "needs-new-code"),
-                            (_, { Failed: true }) => ("Failed", "discriminating"),
-                            (_, { Passed: true }) => ("Passed", "non-discriminating"),
+                            (false, _, _) => ("build-failed", "needs-new-code"),
+                            (_, not null, _) => ("not-run", "unknown"),
+                            (_, _, { Failed: true }) => ("Failed", "discriminating"),
+                            (_, _, { Passed: true }) => ("Passed", "non-discriminating"),
                             _ => ("not-run", "unknown"),
                         };
                         trace.Info($"    {t.Name}: {t.OnOldCode} on old code  →  {t.Verdict}");
@@ -398,7 +251,7 @@ public static class ReviewCommand
         }
 
         result.Runs = headRuns.Concat(baseRuns).Concat(probeRuns)
-            .Select(r => new RunSummary(r.Label, r.Project, r.Built, r.PassedCount, r.FailedCount, r.Results.Count, r.Seconds, r.BuildErrors))
+            .Select(r => r.Summary())
             .ToList();
 
         // 7. Attribute the results to each changed symbol, lowest layer first.
@@ -426,6 +279,7 @@ public static class ReviewCommand
         var comparison = CompareRuns(headRuns, baseRuns);
         result.Regressions = comparison.Regressions;
         var failedMethods = headRuns.SelectMany(r => r.Results).Where(r => r.Failed).Select(r => r.Method).ToHashSet(StringComparer.Ordinal);
+        var blindZone = new List<(Node Node, ChangedSymbol Owner, int Distance, List<int> Lines)>();
 
         foreach (var c in changed)
         {
@@ -437,6 +291,34 @@ public static class ReviewCommand
             var members = dependents.Where(kv => graph.Nodes[kv.Key] is { IsTest: false, Kind: not "type" }).ToList();
             c.Dependents = members.Count;
             c.PublicDependents.AddRange(members.Where(kv => graph.Nodes[kv.Key].IsPublicApi).OrderBy(kv => kv.Value).Take(5).Select(kv => graph.Nodes[kv.Key].Display));
+
+            // Of the code that depends on this unit, how much does any test execute? Where none does, a break
+            // that reaches it would not be seen, and the count of dependents is all that is known about it.
+            if (!c.IsTest && coverage.Count > 0)
+            {
+                foreach (var (id, distance) in members.OrderBy(kv => kv.Value))
+                {
+                    var member = graph.Nodes[id];
+                    var measured = member.Spans
+                        .SelectMany(s => coverage.TryGetValue(s.File, out var ls) ? ls.Where(l => l.Key >= s.Start && l.Key <= s.End) : Enumerable.Empty<KeyValuePair<int, int>>())
+                        .ToList();
+                    if (measured.Count == 0 || member.IsGenerated)
+                    {
+                        continue;
+                    }
+
+                    c.MeasuredDependents++;
+                    if (measured.All(l => l.Value == 0))
+                    {
+                        c.UnexecutedDependents++;
+                        c.UnexecutedDependentNames.Add(member.Display);
+                        if (blindZone.All(b => b.Node.Id != id))
+                        {
+                            blindZone.Add((member, c, distance, measured.Select(l => l.Key).OrderBy(l => l).ToList()));
+                        }
+                    }
+                }
+            }
 
             if (c.IsTest)
             {
@@ -470,9 +352,9 @@ public static class ReviewCommand
             c.Status = c switch
             {
                 { FailingTests.Count: > 0 } => "failing",
-                { UncoveredLines.Count: 0, CoveredLines.Count: > 0 } => "verified",
-                { UncoveredLines.Count: > 0, CoveredLines.Count: > 0 } => "partially-verified",
-                { UncoveredLines.Count: > 0 } => "unverified",
+                { UncoveredLines.Count: 0, CoveredLines.Count: > 0 } => "executed",
+                { UncoveredLines.Count: > 0, CoveredLines.Count: > 0 } => "partly-executed",
+                { UncoveredLines.Count: > 0 } => "not-executed",
                 _ => "not-measured",
             };
         }
@@ -481,18 +363,26 @@ public static class ReviewCommand
         foreach (var c in changed.Where(c => !c.IsTest))
         {
             trace.Info($"layer {c.Layer,2}  {c.Display}");
-            trace.Info($"          changed lines run {c.CoveredLines.Count}, not run {c.UncoveredLines.Count}{(c.UncoveredLines.Count > 0 ? " (" + Ranges(c.UncoveredLines) + ")" : string.Empty)}  |  {c.Dependents} units depend on it  |  {c.ReachingTests} tests can reach it  →  {c.Status}");
+            trace.Info($"          changed lines run {c.CoveredLines.Count}, not run {c.UncoveredLines.Count}{(c.UncoveredLines.Count > 0 ? " (" + Ranges(c.UncoveredLines) + ")" : string.Empty)}  |  {c.Dependents} units depend on it ({c.UnexecutedDependents} of {c.MeasuredDependents} measured ones run by no test)  |  {c.ReachingTests} tests can reach it  →  {c.Status}");
         }
 
         result.Tests = OutcomesByMethod(headRuns, baseRuns, result.ProbedTests);
 
-        // Optional deeper stages. Both work on a second copy of the new code and put every file back.
-        if (!skipTests && (o.Has("mutate") || o.Has("write-tests")))
+        // Optional deeper stages. They work on scratch copies of the old and the new code and put every file back.
+        var deeper = new[] { "mutate", "write-tests", "compare", "attack", "attack-brief", "exhaustive" }.Where(o.Has).ToList();
+        var attackFrom = o.Get("attack-from") is { } from ? Path.GetFullPath(from) : null;
+        if (attackFrom is not null)
+        {
+            deeper.Add("attack-from");
+        }
+
+        if (!skipTests && deeper.Count > 0)
         {
             var bench = new Workbench
             {
                 Git = git,
                 HeadSha = headSha,
+                BaseSha = baseSha,
                 HeadWorktree = headWt,
                 WorktreesRoot = worktrees,
                 TestProjects = testProjects,
@@ -501,30 +391,84 @@ public static class ReviewCommand
                 Trace = trace,
                 CoverageByProject = coverageByProject,
                 FailingOnHead = headRuns.SelectMany(r => r.Results).Where(r => r.Failed).Select(r => r.Project + "::" + r.Method).ToHashSet(StringComparer.Ordinal),
+                NewTests = result.ProbedTests.Select(p => ModelSession.MethodOf(p.Name)).ToHashSet(StringComparer.Ordinal),
             };
+            int Limit(string name, int fallback) => int.TryParse(o.Get(name), out var n) ? n : fallback;
+            var session = new ModelSession(o.Get("writer-model") ?? "claude-opus-5-5", o.Get("writer-effort") ?? "medium");
+            if (deeper.Any(d => d is "write-tests" or "compare" or "attack" or "exhaustive"))
+            {
+                result.TestWriter = session.Name;
+            }
+
             var mutantTexts = new Dictionary<string, string>(StringComparer.Ordinal);
             if (o.Has("mutate"))
             {
                 trace.Step("Break each changed line on purpose and see whether any test notices (mutation testing)");
-                (result.Mutants, mutantTexts) = MutationRunner.Run(bench, changed, int.TryParse(o.Get("max-mutants"), out var mm) ? mm : 20);
+                (result.Mutants, mutantTexts) = MutationRunner.Run(bench, changed, Limit("max-mutants", 20));
+            }
+
+            if (o.Has("compare"))
+            {
+                trace.Step("Run the same inputs through the OLD and the NEW code and see where the results differ");
+                result.Comparisons = new Comparer(session).CompareModified(bench, graph, result, outDir, Limit("max-probes", 4));
             }
 
             if (o.Has("write-tests"))
             {
                 trace.Step("Ask a model for tests that fill the gaps, and check every one before believing it");
-                var writer = new TestWriter(o.Get("writer-model") ?? "claude-opus-5-5", o.Get("writer-effort") ?? "medium");
-                result.TestWriter = writer.Name;
-                result.ProposedTests = writer.Run(bench, graph, changed, result, mutantTexts, outDir, int.TryParse(o.Get("max-tests"), out var mt) ? mt : 4);
+                result.ProposedTests = new TestWriter(session).Run(bench, graph, changed, result, mutantTexts, outDir, Limit("max-tests", 4));
+            }
+
+            if (o.Has("attack") || o.Has("attack-brief") || attackFrom is not null)
+            {
+                // Aimed by what was measured so far: the units the list already puts first.
+                trace.Step("Ask a model to break the units at the top of the list; the old code decides who is right");
+                var byId = changed.Where(c => !c.IsTest).GroupBy(c => c.Display, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+                var targets = Attention.Build(result, headWt)
+                    .Where(i => i.Kind == "unit" && byId.ContainsKey(i.What))
+                    .Select(i => byId[i.What])
+                    .Where(c => c.CoveredLines.Count + c.UncoveredLines.Count > 0)
+                    .ToList();
+                var attacker = new Attacker(session);
+                var most = Limit("max-attacks", 3);
+                (result.Attacks, result.AttackWriter) = attackFrom is not null
+                    ? (attacker.RunFrom(bench, graph, result, targets, outDir, most, attackFrom), "whoever left the test files in " + attackFrom)
+                    : o.Has("attack-brief")
+                        ? (attacker.Brief(bench, graph, result, targets, outDir, most), null)
+                        : (attacker.Run(bench, graph, result, targets, outDir, most), session.Name);
+            }
+
+            if (o.Has("exhaustive"))
+            {
+                trace.Step("Exhaustive: probe the older code that depends on the change and that no original test executes");
+                var (probes, summary) = new Comparer(session).Exhaustive(bench, graph, result, blindZone, mutantTexts, outDir, Limit("max-sessions", 10));
+                result.Comparisons.AddRange(probes);
+                result.Exhaustive = summary;
+            }
+
+            if (session.Sessions > 0)
+            {
+                trace.Info($"model sessions opened in this run: {session.Sessions}");
             }
         }
+        else if (!skipTests && blindZone.Count > 0)
+        {
+            trace.Info($"{blindZone.Count} member(s) depend on the change and are run by no test; --exhaustive would probe them");
+        }
 
-        trace.Step("Turn the results into evidence and a reading plan, and write the report");
+        if (git.Restored.Count > 0)
+        {
+            trace.Info($"working copies found altered by an earlier run and put back to their commit: {string.Join(", ", git.Restored)}");
+        }
+
+        trace.Step("Turn the results into evidence and an ordered list of where to look, and write the report");
         BuildEvidence(result, graph, headRuns, baseRuns, comparison, skipTests);
         BuildFindings(result, graph, testProjects, skipTests);
-        BuildReadingPlan(result);
+        result.Attention = Attention.Build(result, headWt);
         trace.List(result.Evidence.Select(e => $"{e.Id,-4} {e.Status.ToUpperInvariant(),-5} {e.Claim}"), 30);
         trace.Info($"not checked: {result.NotChecked.Count} item(s)  |  refused to decide: {result.RefusedToDecide.Count} item(s)");
-        trace.Info($"a person still has to read {result.LinesToRead} of {result.ChangedLinesTotal} changed lines");
+        trace.Info("where to look, most deserving first:");
+        trace.List(result.Attention.Select(a => $"{a.Rank,3}. tier {a.Tier}  {a.What}  —  {a.Why.FirstOrDefault()}"), 25);
 
         // 8. Write the artefacts. The report quotes the hash of the evidence file it was derived from.
         var evidenceJson = JsonSerializer.Serialize(result, Json);
@@ -546,7 +490,12 @@ public static class ReviewCommand
             Console.WriteLine($"{e.Id,-4} {e.Status.ToUpperInvariant(),-5} {e.Claim}");
         }
 
-        Console.WriteLine($"Human read  {result.LinesToRead} of {result.ChangedLinesTotal} changed lines");
+        Console.WriteLine("Look first  " + string.Join("  |  ", result.Attention.GroupBy(a => a.Tier).OrderBy(g => g.Key).Select(g => $"tier {g.Key}: {g.Count()}")));
+        foreach (var a in result.Attention.Take(5))
+        {
+            Console.WriteLine($"  {a.Rank}. [tier {a.Tier}] {a.What}");
+        }
+
         Console.WriteLine($"Report      {Path.Combine(outDir, "report.md")}");
         return result.Evidence.Any(e => e.Status == "fail") ? 1 : 0;
     }
@@ -749,6 +698,9 @@ public static class ReviewCommand
 
         public List<string> Removed { get; } = new();
 
+        /// <summary>Tests that passed on the old code and neither pass nor fail on the new code: skipped or not run.</summary>
+        public List<string> Silenced { get; } = new();
+
         public HashSet<string> NewKeys { get; } = new(StringComparer.Ordinal);
     }
 
@@ -782,6 +734,11 @@ public static class ReviewCommand
             {
                 c.Regressions.Add(r.Name);
             }
+            else if (old.Passed)
+            {
+                // Switching a test off is the quietest way to make a failure disappear.
+                c.Silenced.Add($"{r.Name} ({r.Outcome})");
+            }
         }
 
         foreach (var group in headLoose)
@@ -807,349 +764,6 @@ public static class ReviewCommand
         c.Regressions.Sort(StringComparer.Ordinal);
         return c;
     }
-
-    private static void BuildEvidence(
-        ReviewResult result,
-        CodeGraph graph,
-        List<TestRun> headRuns,
-        List<TestRun> baseRuns,
-        RunComparison comparison,
-        bool skipTests)
-    {
-        var list = result.Evidence;
-        string Next() => "E" + (list.Count + 1);
-
-        var bigPatterns = result.Patterns.Where(p => p.Files.Count > 1).ToList();
-        list.Add(new Evidence(
-            Next(),
-            "change-shape",
-            "info",
-            $"{result.Files.Count} changed files reduce to {result.Patterns.Count} distinct edit patterns" + (bigPatterns.Count > 0 ? $"; the largest covers {bigPatterns[0].Files.Count} files" : string.Empty),
-            "git diff + exact line-edit grouping (deterministic)"));
-
-        var source = result.ChangedSymbols.Where(c => !c.IsTest).ToList();
-        list.Add(new Evidence(
-            Next(),
-            "impact",
-            graph.Warnings.Count > 0 ? "warn" : "info",
-            $"{source.Count} non-test symbols changed across layers {(source.Count > 0 ? $"{source.Min(c => c.Layer)}–{source.Max(c => c.Layer)}" : "n/a")}; {source.Sum(c => c.Dependents)} dependent members and {source.Count(c => c.PublicApi)} public API symbols touched",
-            $"Roslyn semantic model over {graph.Projects.Count} projects ({graph.Nodes.Count} nodes, {graph.Edges.Count} edges)",
-            graph.Warnings.Count > 0 ? $"{graph.Warnings.Count} loader warnings: the graph may be missing edges" : null));
-
-        if (skipTests)
-        {
-            list.Add(new Evidence(Next(), "tests", "warn", "No test was run (--skip-tests)", "n/a"));
-            return;
-        }
-
-        if (result.SdkPinnedByRepo is not null)
-        {
-            list.Add(new Evidence(
-                Next(),
-                "environment",
-                "info",
-                $"Old and new code were both built with .NET SDK {result.Sdk}, not the {result.SdkPinnedByRepo} the repository selects, because its source generator needs a newer compiler",
-                "dotnet --version; compiler warning CS9057"));
-        }
-
-        var built = headRuns.Where(r => r.Built).ToList();
-        if (built.Count > 0)
-        {
-            list.Add(new Evidence(Next(), "build", "pass", $"{built.Count} test project(s) and their dependencies compile with the change", "dotnet build (new code)"));
-        }
-
-        foreach (var run in headRuns.Where(r => !r.Built))
-        {
-            // A project that did not compile before the change either says nothing about the change.
-            var brokenBefore = baseRuns.Any(b => b.Project == run.Project && !b.Built);
-            list.Add(new Evidence(
-                Next(),
-                "build",
-                brokenBefore ? "warn" : "fail",
-                brokenBefore
-                    ? $"{run.Project} compiles on neither old nor new code in this environment, so its tests gave no evidence"
-                    : $"{run.Project} compiled before the change and does not compile with it",
-                "dotnet build on old and new code",
-                string.Join("\n", run.BuildErrors.Take(3))));
-        }
-
-        list.Add(new Evidence(
-            Next(),
-            "regression",
-            comparison.Regressions.Count > 0 ? "fail" : comparison.Existing == 0 ? "warn" : "pass",
-            comparison.Existing == 0
-                ? "No pre-existing test was available to compare old and new behaviour"
-                : $"{comparison.StillPassing} of {comparison.Existing} pre-existing tests pass on both old and new code; {comparison.Regressions.Count} regressed",
-            "dotnet test on old and new code, compared test by test",
-            comparison.Regressions.Count > 0 ? string.Join("\n", comparison.Regressions.Take(10)) : null));
-
-        if (comparison.UnstableRows > 0)
-        {
-            list.Add(new Evidence(
-                Next(),
-                "regression",
-                "warn",
-                $"{comparison.UnstableRows} of those tests are fed random data, so their inputs differ on every run; they were compared per test method, not input by input",
-                "dotnet test on old and new code"));
-        }
-
-        if (comparison.Removed.Count > 0)
-        {
-            list.Add(new Evidence(Next(), "regression", "warn", $"{comparison.Removed.Count} test(s) that ran on the old code no longer run on the new code", "dotnet test on old and new code", string.Join("\n", comparison.Removed.Take(10))));
-        }
-
-        var probes = result.ProbedTests;
-        if (probes.Count > 0)
-        {
-            var failingNew = probes.Count(p => p.OnHead == "Failed");
-            list.Add(new Evidence(
-                Next(),
-                "new-tests",
-                failingNew > 0 ? "fail" : "pass",
-                $"{probes.Count(p => p.Origin == "new")} new and {probes.Count(p => p.Origin == "modified")} modified tests; {probes.Count - failingNew} pass on the new code",
-                "dotnet test (new code)"));
-
-            var discriminating = probes.Count(p => p.Verdict == "discriminating");
-            var weak = probes.Where(p => p.Verdict == "non-discriminating").ToList();
-            var needNew = probes.Count(p => p.Verdict == "needs-new-code");
-            list.Add(new Evidence(
-                Next(),
-                "fail-before",
-                weak.Count > 0 ? "warn" : "pass",
-                $"{discriminating} of {probes.Count} of those tests fail on the old code (they demonstrate the change); {weak.Count} pass without it; {needNew} cannot compile without it",
-                "dotnet test on old source with the change's test files applied",
-                weak.Count > 0 ? "Pass without the change:\n" + string.Join("\n", weak.Take(15).Select(p => p.Name)) : null));
-        }
-        else
-        {
-            list.Add(new Evidence(Next(), "new-tests", "warn", "The change adds or modifies no test", "dotnet test on old and new code"));
-        }
-
-        var covered = source.Sum(c => c.CoveredLines.Count);
-        var uncovered = source.Sum(c => c.UncoveredLines.Count);
-        list.Add(new Evidence(
-            Next(),
-            "coverage",
-            covered + uncovered == 0 ? "warn" : uncovered > 0 ? "warn" : "pass",
-            covered + uncovered == 0
-                ? "No changed executable source line was measured"
-                : $"{covered} of {covered + uncovered} changed executable source lines were executed by the test suite; {uncovered} were never executed",
-            "Microsoft Code Coverage during dotnet test (new code)"));
-
-        if (result.Mutants.Count > 0)
-        {
-            var caught = result.Mutants.Count(m => m.Status is "killed" or "timeout");
-            var survived = result.Mutants.Count(m => m.Status == "survived");
-            var blind = result.Mutants.Count(m => m.Status == "not-covered");
-            var skipped = result.Mutants.Count(m => m.Status == "not-run");
-            list.Add(new Evidence(
-                Next(),
-                "mutation",
-                survived > 0 ? "warn" : caught > 0 ? "pass" : "warn",
-                $"{caught} of {caught + survived} deliberate breaks of changed lines were caught by a test; {survived} went unnoticed" +
-                (blind > 0 ? $"; {blind} more are on lines no test executes" : string.Empty) +
-                (skipped > 0 ? $"; {skipped} were not tried (budget)" : string.Empty),
-                "each changed line altered in turn, then dotnet test (mutation testing)",
-                survived > 0 ? string.Join("\n", result.Mutants.Where(m => m.Status == "survived").Take(12).Select(m => $"{m.File}:{m.Line}  {m.Description}  in  {m.Original}")) : null));
-        }
-
-        if (result.ProposedTests.Count > 0)
-        {
-            var tried = result.ProposedTests.Where(t => t.Status != "not-attempted").ToList();
-            var accepted = tried.Where(t => t.Status == "accepted").ToList();
-            var closed = tried.Count(t => t.Reason == "unnoticed-break" && t.Status is "accepted" or "caught-by-other");
-            var asked = tried.Count(t => t.Attempts > 0);
-            list.Add(new Evidence(
-                Next(),
-                "written-tests",
-                "info",
-                $"{accepted.Count} of {asked} tests written by {result.TestWriter} were accepted: they compile, pass, and now execute {accepted.Sum(t => t.CoversLines.Count)} previously unexecuted line(s) and catch {closed} of {tried.Count(t => t.Reason == "unnoticed-break")} previously unnoticed break(s)",
-                $"{result.TestWriter} wrote them; dotnet test and coverage checked each one, and each accepted test was run against every other unnoticed break",
-                tried.Count > accepted.Count ? string.Join("\n", tried.Where(t => t.Status != "accepted").Select(t => $"{t.Request}: {t.Status} — {t.Detail}")) : null));
-        }
-    }
-
-    private static void BuildFindings(ReviewResult result, CodeGraph graph, List<string> testProjects, bool skipTests)
-    {
-        var notChecked = result.NotChecked;
-        foreach (var c in result.ChangedSymbols.Where(c => !c.IsTest && c.UncoveredLines.Count > 0))
-        {
-            notChecked.Add(new Finding(
-                "Unexecuted code",
-                $"{c.Display} — line(s) {Ranges(c.UncoveredLines)} of {c.File} were never executed by any test" +
-                (c.Dependents > 0 ? $"; {c.Dependents} members depend on this symbol and inherit the doubt" : string.Empty)));
-        }
-
-        foreach (var m in result.Mutants.Where(m => m.Status == "survived"))
-        {
-            notChecked.Add(new Finding(
-                "Unnoticed break",
-                $"{m.File}:{m.Line} — altering `{m.Original}` ({m.Description}) makes no test fail. The line runs, but nothing checks what it does."));
-        }
-
-        foreach (var group in result.Files.Where(f => f.Category is "docs" or "build-config" or "other").GroupBy(f => f.Category))
-        {
-            notChecked.Add(new Finding(
-                group.Key switch { "docs" => "Documentation", "build-config" => "Build configuration", _ => "Other files" },
-                $"{group.Count()} file(s), {group.Sum(f => f.Added + f.Deleted)} lines: no tool checked that this text is accurate ({string.Join(", ", group.Take(4).Select(f => f.Path))}{(group.Count() > 4 ? ", …" : string.Empty)})"));
-        }
-
-        var snapshots = result.Files.Where(f => f.Category == "test-snapshot").ToList();
-        if (snapshots.Count > 0)
-        {
-            notChecked.Add(new Finding(
-                "Expected-output files",
-                $"{snapshots.Count} expected-output files were rewritten by the same commit that changed the code producing them. Tests comparing against them pass by construction, so they show the output is stable, not that it is right."));
-        }
-
-        if (result.Files.Any(f => f.Category == "template") && result.Files.Any(f => f.Category == "generated"))
-        {
-            notChecked.Add(new Finding(
-                "Templates vs generated code",
-                "Both T4 templates (.tt) and their generated .cs files changed. The templates were not re-run to confirm the committed .cs files are what they produce."));
-        }
-
-        foreach (var run in result.Runs.Where(r => r.Label == "head" && !r.Built))
-        {
-            notChecked.Add(new Finding(
-                "Tests that could not be built",
-                $"{run.Project} did not compile, so none of its tests ran. First error: {run.BuildErrors.FirstOrDefault() ?? "see the run log"}"));
-        }
-
-        if (graph.Warnings.Count > 0)
-        {
-            notChecked.Add(new Finding("Dependency graph", $"{graph.Warnings.Count} warning(s) while loading the projects; dependencies may be missing. First: {graph.Warnings[0]}"));
-        }
-
-        if (skipTests)
-        {
-            notChecked.Add(new Finding("Behaviour", "No test was executed; every behavioural claim is unverified."));
-        }
-
-        var refused = result.RefusedToDecide;
-        refused.Add(new Finding(
-            "Requirement",
-            $"Whether this change does what {(result.Requirement is null ? "its requirement" : "requirement " + result.Requirement)} asks. AYA measured what the code does under test; it has not interpreted the requirement."));
-        foreach (var t in result.ProbedTests.Where(p => p.Verdict == "non-discriminating"))
-        {
-            refused.Add(new Finding("Test value", $"Whether {t.Name} is evidence for this change: it passes on the old code too, so it does not demonstrate the new behaviour."));
-        }
-
-        if (result.ProbedTests.Any(p => p.Origin == "modified"))
-        {
-            refused.Add(new Finding("Changed expectations", "Whether editing existing tests was legitimate. A modified test may have had its expectation changed to fit the new code."));
-        }
-
-        if (result.ChangedSymbols.Any(c => !c.IsTest && c.ChangeKind == "modified" && c.Dependents > 0))
-        {
-            refused.Add(new Finding("Side effects", "Whether behaviour changes in already-existing members are intended. They are reachable from code the requirement does not mention."));
-        }
-
-        var acceptedTests = result.ProposedTests.Count(t => t.Status == "accepted");
-        if (acceptedTests > 0)
-        {
-            refused.Add(new Finding(
-                "Proposed tests",
-                $"Whether the {acceptedTests} accepted test(s) written by {result.TestWriter} assert the right behaviour. AYA checked that they compile, pass and reach their target; a model chose what to assert. They are proposals in the proposed-tests folder, not part of the change."));
-        }
-
-        foreach (var t in result.ProposedTests.Where(t => t.Status == "fails-on-current-code"))
-        {
-            refused.Add(new Finding(
-                "Possible defect",
-                $"Whether {t.Request} ({t.Symbol}) fails because the test is wrong or because the code is. {result.TestWriter} wrote a test for it that still fails after {t.Attempts} attempt(s): {t.Detail}"));
-        }
-
-        if (result.Regressions.Count > 0)
-        {
-            refused.Add(new Finding("Regressions", $"Whether {result.Regressions.Count} newly failing test(s) are acceptable. AYA reports them; it does not waive them."));
-        }
-
-        result.Limits.AddRange(
-        [
-            "Executed is not the same as correct: a covered line ran under a passing test, nothing more.",
-            "Coverage does not separate pre-existing tests from tests written in the same change.",
-            "Static reachability over-approximates: referring to a type is treated as possibly calling its constructors and framework entry points.",
-            "Calls made through reflection, generated code or analyzers loaded by the compiler are not edges in the graph.",
-            "Symbols deleted by the change are attributed to the declaration that enclosed them; a deleted member has no node.",
-        ]);
-        if (!skipTests && testProjects.Count == 0)
-        {
-            result.Limits.Add("No test project depends on the changed projects through a project reference; nothing was executed.");
-        }
-    }
-
-    /// <summary>
-    /// Turns the evidence into a reading plan: which lines a person still has to read, and why. The rule is fixed
-    /// and stated in the report so the owner can disagree with it.
-    /// </summary>
-    private static void BuildReadingPlan(ReviewResult result)
-    {
-        var plan = result.ReadingPlan;
-        var grouped = result.Patterns.Where(p => p.Files.Count > 1).ToDictionary(p => p.Id);
-
-        foreach (var c in result.ChangedSymbols.Where(c => !c.IsTest && !grouped.ContainsKey(PatternOf(result, c.File))))
-        {
-            switch (c.Status)
-            {
-                case "failing":
-                    plan.Add(new ReadItem("full", c.Display, $"{c.FailingTests.Count} failing test(s) reach it", c.ChangedLines.Count));
-                    break;
-                case "unverified":
-                    plan.Add(new ReadItem("full", c.Display, "no changed line was executed by any test", c.ChangedLines.Count));
-                    break;
-                case "partially-verified":
-                    plan.Add(new ReadItem("targeted", $"{c.Display} — lines {Ranges(c.UncoveredLines)}", "these lines were never executed", c.UncoveredLines.Count));
-                    break;
-                case "verified" when c.ChangeKind == "modified" && c.Dependents > 0:
-                    // Existing behaviour that other code relies on changed. Tests passing is not enough to waive a look.
-                    plan.Add(new ReadItem("targeted", $"{c.Display} — lines {Ranges(c.ChangedLines)}", $"alters an existing member that {c.Dependents} others depend on", c.ChangedLines.Count));
-                    break;
-                case "verified" when c.Mutants.Any(m => m.Status == "survived"):
-                    var unnoticed = c.Mutants.Where(m => m.Status == "survived").Select(m => m.Line).Distinct().OrderBy(l => l).ToList();
-                    plan.Add(new ReadItem("targeted", $"{c.Display} — lines {Ranges(unnoticed)}", "these lines run, but breaking them on purpose made no test fail", unnoticed.Count));
-                    break;
-                case "verified":
-                    plan.Add(new ReadItem("light", c.Display, $"new code; all {c.CoveredLines.Count} changed executable lines ran under passing tests", 0));
-                    break;
-                default:
-                    plan.Add(new ReadItem("light", c.Display, "no executable line changed, or nothing was measured", result.Runs.Count == 0 ? c.ChangedLines.Count : 0));
-                    break;
-            }
-        }
-
-        var testSymbols = result.ChangedSymbols.Where(c => c.IsTest).ToList();
-        foreach (var t in result.ProbedTests.Where(p => p.Verdict != "discriminating").GroupBy(p => p.Name.IndexOf('(') is var i and > 0 ? p.Name[..i] : p.Name))
-        {
-            var symbol = testSymbols.FirstOrDefault(s => s.Display.Contains(t.Key.Split('.').Last(), StringComparison.Ordinal));
-            var why = t.First().Verdict switch
-            {
-                "non-discriminating" => "passes on the old code too",
-                "needs-new-code" => "cannot be compiled against the old code, so it could not be shown to fail before",
-                _ => "could not be run against the old code",
-            };
-            plan.Add(new ReadItem("targeted", "test " + t.Key, why, symbol?.ChangedLines.Count ?? 0));
-        }
-
-        foreach (var p in grouped.Values)
-        {
-            plan.Add(new ReadItem(
-                "targeted",
-                $"one of {p.Files.Count} {p.Category} files sharing pattern {p.Id} (e.g. {p.Files[0]})",
-                $"all {p.Files.Count} files received the same {p.Edits.Count} line edit(s)",
-                p.LinesPerFile));
-        }
-
-        foreach (var f in result.Files.Where(f => !grouped.ContainsKey(f.Pattern) && f.Category is "docs" or "build-config" or "other" or "template" or "test-snapshot"))
-        {
-            plan.Add(new ReadItem("targeted", f.Path, $"{f.Category}: no automated check applies", f.Added + f.Deleted));
-        }
-
-        result.LinesToRead = plan.Sum(i => i.Lines);
-    }
-
-    private static string PatternOf(ReviewResult result, string file) =>
-        result.Files.FirstOrDefault(f => string.Equals(f.Path, file, StringComparison.OrdinalIgnoreCase))?.Pattern ?? string.Empty;
 
     /// <summary>Formats sorted line numbers as compact ranges: 3, 7–9.</summary>
     public static string Ranges(IReadOnlyList<int> lines)

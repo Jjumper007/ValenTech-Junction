@@ -83,6 +83,9 @@ public sealed class Git(string repo)
 {
     public string Repo { get; } = repo;
 
+    /// <summary>Working copies found altered and put back to their commit during this run.</summary>
+    public List<string> Restored { get; } = new();
+
     public ProcResult Try(params string[] args) =>
         Proc.Run("git", new[] { "-c", "core.longpaths=true", "-c", "core.quotepath=false" }.Concat(args), this.Repo);
 
@@ -125,9 +128,21 @@ public sealed class Git(string repo)
     {
         if (Directory.Exists(path))
         {
-            var head = new Git(path).Try("rev-parse", "HEAD");
+            var copy = new Git(path);
+            var head = copy.Try("rev-parse", "HEAD");
             if (head.Ok && head.StdOut.Trim() == sha)
             {
+                // Being at the right commit is not enough: an interrupted run can leave an altered file or a
+                // candidate test behind, and the results would then be reported against a commit they do not
+                // describe. These copies belong to AYA, so they are put back to the commit before every use.
+                var dirty = copy.Try("status", "--porcelain");
+                if (dirty.Ok && dirty.StdOut.Trim().Length > 0)
+                {
+                    copy.Run("reset", "--hard", sha);
+                    copy.Run("clean", "-fd");
+                    this.Restored.Add(Path.GetFileName(path));
+                }
+
                 return path;
             }
 

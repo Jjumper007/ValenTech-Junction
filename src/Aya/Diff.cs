@@ -40,8 +40,11 @@ public sealed class FileChange
 
     public bool Binary { get; set; }
 
-    /// <summary>Identifier of the edit pattern this file shares with others. See <see cref="PatternGroup"/>.</summary>
+    /// <summary>Identifier of the similar-edit group this file belongs to. See <see cref="PatternGroup"/>.</summary>
     public string Pattern { get; set; } = string.Empty;
+
+    /// <summary>Identifier of the exact edit: the same lines, in the same order, the same number of times.</summary>
+    public string ExactPattern { get; set; } = string.Empty;
 
     [JsonIgnore]
     public List<Hunk> Hunks { get; } = new();
@@ -50,7 +53,11 @@ public sealed class FileChange
     public IEnumerable<int> AddedLines() => this.Hunks.SelectMany(h => Enumerable.Range(h.NewStart, h.NewLen));
 }
 
-/// <summary>Files whose changes are the same set of line edits. Reviewing one member reviews the pattern.</summary>
+/// <summary>
+/// Files whose changes use the same distinct line edits, ignoring indentation, order and repetition. That makes
+/// them similar, not identical: one file may apply the edit once and another three times. The exact variants are
+/// listed so nobody reads one file and assumes the rest.
+/// </summary>
 public sealed class PatternGroup
 {
     public required string Id { get; init; }
@@ -62,7 +69,18 @@ public sealed class PatternGroup
     /// <summary>The distinct edits, as "-removed" and "+added" lines with indentation stripped.</summary>
     public required List<string> Edits { get; init; }
 
-    public int LinesPerFile { get; init; }
+    /// <summary>The files split by exact edit, largest first. One variant means the files really are identical edits.</summary>
+    public List<PatternVariant> Variants { get; } = new();
+}
+
+/// <summary>Files that received exactly the same edit: same lines, same order, same number of times.</summary>
+public sealed class PatternVariant
+{
+    public required string Id { get; init; }
+
+    public required int EditedLines { get; init; }
+
+    public required List<string> Files { get; init; }
 }
 
 public static partial class DiffParser
@@ -190,7 +208,7 @@ public static partial class DiffParser
 
     /// <summary>
     /// Groups files by the set of distinct line edits they received, ignoring indentation and how many times
-    /// each edit repeats. Two hundred files that all gained the same attribute line form one group.
+    /// each edit repeats, then splits every group into the variants that are exactly the same edit.
     /// </summary>
     public static List<PatternGroup> GroupPatterns(List<FileChange> files)
     {
@@ -212,10 +230,26 @@ public static partial class DiffParser
             f.Pattern = hash;
             if (!groups.TryGetValue(hash, out var g))
             {
-                groups[hash] = g = new PatternGroup { Id = hash, Category = f.Category, Files = new(), Edits = edits, LinesPerFile = f.Added + f.Deleted };
+                groups[hash] = g = new PatternGroup { Id = hash, Category = f.Category, Files = new(), Edits = edits };
             }
 
             g.Files.Add(f.Path);
+
+            // The exact edit keeps what the similar one throws away: order, repetition and indentation.
+            var exact = f.Hunks.SelectMany(h => h.Removed.Select(l => "-" + l.TrimEnd('\r')).Concat(h.Added.Select(l => "+" + l.TrimEnd('\r')))).ToList();
+            f.ExactPattern = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(string.Join("\n", exact))))[..10].ToLowerInvariant();
+            var variant = g.Variants.FirstOrDefault(v => v.Id == f.ExactPattern);
+            if (variant is null)
+            {
+                g.Variants.Add(variant = new PatternVariant { Id = f.ExactPattern, EditedLines = exact.Count, Files = new() });
+            }
+
+            variant.Files.Add(f.Path);
+        }
+
+        foreach (var g in groups.Values)
+        {
+            g.Variants.Sort((a, b) => b.Files.Count != a.Files.Count ? b.Files.Count.CompareTo(a.Files.Count) : string.CompareOrdinal(a.Id, b.Id));
         }
 
         return groups.Values.OrderByDescending(g => g.Files.Count).ThenBy(g => g.Id, StringComparer.Ordinal).ToList();

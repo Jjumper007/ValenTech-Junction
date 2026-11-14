@@ -1,95 +1,113 @@
 # AYA
 
-Evidence for reviewing AI-written code changes, so a named person can accept a change without reading every line.
+Know where to look, and what to trust, in a code change written by an AI.
 
 Built for the Tieto challenge at Junction 2026: *how can AI review code made by AI so that humans can trust it?*
 
 ## What it does
 
-`aya review` takes a change (a branch or commit) and produces a one-page report that says what was checked, by which tool, what was not checked, and which lines a person still has to read. Nothing in the report is a model's opinion; every statement comes from a compiler, a test run or a diff.
+`aya review` takes a change (a branch or commit) and orders everything it touches by how much it deserves a
+person's attention, with the reason for every place in the list. The named person who signs decides how far down
+to go. Nothing is ever left out of the list: its last tier means *no signal was found*, not *this is safe*.
 
-For one change it:
+AYA is built to be trusted when it raises an alarm, and it never says that something can be skipped. An alarm has
+a measurement behind it. An all-clear would only have the absence of one.
 
-1. Classifies every changed file by role (source, test, expected-output file, template, generated code, docs) and groups files that received exactly the same line edits.
-2. Builds a dependency graph of the code from the C# compiler's semantic model (Roslyn), collapses cycles, and assigns each symbol a layer.
-3. Maps the changed lines to the symbols that own them and finds everything that depends on those symbols.
-4. Runs the test suite on the old code and on the new code and compares them test by test.
-5. Runs the tests that came with the change against the *old* code. A test that passes without the change proves nothing about it.
-6. Records which changed lines the tests actually executed.
-7. Writes `report.md`, `evidence.json` and `graph.json`. The report quotes the hash of the evidence it was derived from and ends with a sign-off block for the owner.
+## How risk is shown
 
-## Results on the challenge branches
+Not as one number. Four things are known with very different certainty, so they are shown apart:
 
-Run against the four agent-written branches of `te-industry-tech-office/junction26-messagepack-csharp`:
+| | The question | Where it comes from | How solid |
+|---|---|---|---|
+| Likelihood | Is it easy for this to be wrong? | Modified or new code, what the changed lines consist of, old code against new code on the same inputs, tests written to break it | Indications, plus two measurements when the deeper stages run |
+| Impact | How much breaks if it is wrong? | What depends on it (compiler), how many tests fail when it is broken on purpose, how much of what depends on it no test executes | Partly measured |
+| Detection | Would anything notice? | Which changed lines ran, deliberate breaks that no test caught | Measured |
+| Sight | What can the analysis not see? | Deleted code, generated code, conditional compilation, declarations | Stated per item |
 
-| Branch | Files | Changed lines | Lines left for a human | Notable finding |
-|---|---:|---:|---:|---|
-| `ju26-issue-2283` | 4 | 228 | 14 | All 3 new tests fail on the old code and all 10 changed lines ran, yet 3 of 11 deliberate breaks go unnoticed, all on the one new condition |
-| `ju26-issue-2234` | 4 | 266 | 108 | 6 of the 10 new tests pass on the old code; 5 changed lines never ran |
-| `ju26-issue-2297` | 237 | 1392 | 31 | 221 expected-output files share one 3-line edit |
-| `ju26-issue-2129` | 28 | 1043 | 349 | 65 changed executable lines never ran; 4 of 16 deliberate breaks go unnoticed |
+The order is a fixed rule, printed in every report so the owner can disagree with it:
 
-These figures are from runs with `--mutate --write-tests`. The first row was run without a limit on breaks and with
-the full set of alterations; the other three predate the alterations of returned and passed values and used the
-default limit of 20. A plain run takes four to five minutes on a laptop and executes roughly 1,200 tests on both versions; mutation and written tests add five to ten minutes.
+1. **Breaks something that worked, demonstrated.** An existing test now fails, an input that gave a result now
+   fails, or a test written to break it fails on the new code and passes on the old.
+2. **Changes a result that existed before.**
+3. **Existing code others depend on, where a mistake would go unnoticed.**
+4. **Could not be measured.**
+5. **A mistake here would go unnoticed** (new code, or code nothing depends on).
+6. **No signal found.**
+
+## What it runs
+
+Always:
+
+1. Classifies every changed file by role and groups files that use the same edit, split into the variants that
+   are *exactly* the same edit.
+2. Builds a dependency graph from the C# compiler's semantic model (Roslyn).
+3. Runs the tests on the old code and on the new code, compares them test by test, and records which changed
+   lines executed.
+4. Runs the tests that came with the change against the old code. A test that passes without the change proves
+   nothing about it.
+
+On request, all off by default:
+
+| Option | What it measures |
+|---|---|
+| `--mutate` | Alters each changed line in turn and records whether a test that passed now fails. A line that ran is not a line that is checked. |
+| `--compare` | A model writes a probe that records what a modified unit does on a set of inputs. The probe runs twice on the old code, to discard what is unstable, and once on the new. Inputs whose result differs are reported. This does not depend on how good the existing tests are. |
+| `--write-tests` | A model writes tests for unexecuted lines and unnoticed breaks. One is accepted only if it compiles, passes and is measured to reach its target. |
+| `--attack` | A model writes tests to break the units at the top of the list. One that fails on the new code is run on the old code, which decides whether the change caused it. |
+| `--exhaustive` | Probes every older member that depends on the change and that no original test executes, within a session budget, and counts how many change their output when the change is broken on purpose. |
+
+The rule for everything a model contributes: **a model may lower trust on its opinion, and raise it only through
+something that was measured.** A probe or a test that reaches private members by force, or builds objects the
+program cannot build, is refused.
+
+## What it found
+
+On `ju26-issue-2283` of `te-industry-tech-office/junction26-messagepack-csharp`, an agent-written fix (4 files,
+228 changed lines) whose 3 new tests all fail on the old code and whose 10 changed executable lines all ran:
+
+- **Three deliberate breaks of the one new condition go unnoticed** (8 of 11 breaks were caught). The condition
+  ran in every test and none of them checks what it decides.
+- **Old and new code differ on 4 of 25 inputs.** Two are the fix itself: a type from another assembly used to
+  crash the generator and now generates. The other two are a case the requirement never mentions: a positional
+  record parameter with a null key used to crash the analyzer and now produces no error at all, where an ordinary
+  property still gets one. No test of the change, and no deliberate break, shows this.
+
+Both findings are in units whose every changed line was executed by passing tests.
+
+The other three branches (`ju26-issue-2234`, `-2297`, `-2129`) were analysed before the ordering and the
+comparison existed and have not been re-run yet. Their earlier headline figures are withdrawn: one of them (221
+files "sharing one 3-line edit") was wrong, since the files turned out to be four different variants of that edit.
 
 ## Running it
 
-Requires git and the .NET 8 SDK. The challenge repository also needs the .NET 9 SDK installed: its source
-generator is built against a newer compiler than the SDK it pins, so with .NET 8 alone three of its test
-projects do not compile. AYA detects this and switches to the newest installed SDK for both versions of the code.
+Requires git and the .NET 8 SDK. The challenge repository also needs the .NET 9 SDK: its source generator is
+built against a newer compiler than the SDK it pins. AYA detects this and builds old and new code with the same,
+newer one. The deeper stages that use a model need the `claude` command line.
 
 ```
 dotnet build src/Aya/Aya.csproj
 dotnet src/Aya/bin/Debug/net8.0/aya.dll review \
     --repo https://github.com/te-industry-tech-office/junction26-messagepack-csharp \
-    --head ju26-issue-2283 \
-    --req "MessagePack-CSharp#2283"
+    --head ju26-issue-2283 --req "MessagePack-CSharp#2283" \
+    --mutate --compare --attack
+dotnet test tests/Aya.Tests/Aya.Tests.csproj
 ```
 
-Output goes to `aya-out/<head>/`. Clones and worktrees are kept under `~/.aya` (override with `AYA_HOME`).
+Output goes to `aya-out/<head>/`: `report.md`, `evidence.json`, `graph.json`, `pipeline.log`, and what the models
+wrote under `probes/`, `proposed-tests/` and `attacks/`. `dotnet aya.dll --help` lists every option and its
+default budget. Clones and working copies are kept under `~/.aya` (override with `AYA_HOME`).
 
-| Option | Meaning |
-|---|---|
-| `--repo` | Local clone, or a URL to clone |
-| `--head` | Branch, tag or commit holding the change |
-| `--base` | Commit to compare against (default: merge base with the default branch) |
-| `--req` | Requirement or issue the change claims to implement |
-| `--out` | Output folder |
-| `--sdk` | `repo`: build with the SDK the repository selects. `latest`: the newest installed. `auto` (default): `repo`, switching to `latest` when a source generator needs a newer compiler |
-| `--skip-tests` | Build the graph and map the change without running tests |
-| `--mutate` | Alter each changed line in turn and record whether any test fails (`--max-mutants`, default 20) |
-| `--write-tests` | Ask a model for tests that cover unexecuted lines and unnoticed breaks, and accept only those that compile, pass and are measured to reach their target (`--max-tests`, default 4) |
-
-### Going deeper: `--mutate` and `--write-tests`
-
-Coverage says a changed line ran. It does not say anything checked what the line did. `--mutate` asks that
-question directly: it alters each changed line (flips a comparison, negates a condition, drops one side of an
-`&&` or `||`, removes a statement, replaces a returned value or a call passed as an argument with the default,
-changes a number), re-runs only the test projects that execute that line, and records whether a test that passed
-before now fails. A break no test notices is listed in the report as not checked. The limit is spent across
-changed units first, so every unit gets one break before any gets a second.
-
-`--write-tests` then asks a model to fill the gaps: one request per stretch of unexecuted code and per unnoticed
-break. Nothing the model writes is taken on trust. Each test is added to a scratch copy of the code and must
-compile, pass, and be measured to execute the target lines (or to fail once the line is altered). A rejected test
-is sent back with the compiler or test output, up to three times. Each accepted test is also run against the
-other unnoticed breaks, since one test often catches several. Accepted tests are saved under
-`proposed-tests/` as proposals; they are not added to the change, and the report says a model chose what they assert.
-
-Accepted does not mean worth keeping. Some breaks change nothing a caller could observe, and a model asked to
-catch one may build a state that cannot occur in order to pass the check. On `ju26-issue-2283` one of the two
-accepted tests does exactly that, so a person has to read a proposed test before adopting it.
-
-The writer is the `claude` command line run as a fresh session with no tools (`--writer-model`, default
-`claude-opus-5-5`; `--writer-effort`, default `medium`).
+A plain run takes four to five minutes and executes about 1,200 tests on both versions. Each deeper stage adds
+minutes; the ones that use a model spend most of their time waiting for it.
 
 ## What it does not do
 
-- It does not judge whether the change fulfils its requirement. It says so in the report.
-- A line that ran under a passing test is not proven correct.
+- It does not judge whether the change fulfils its requirement, and says so in the report.
+- A line that ran under a passing test is not proven correct. An accepted test is not proven worth keeping.
+- Old and new code are compared only on the inputs a probe chose. No difference on them is not the same behaviour.
+- The order ranks where a mistake would matter and go unseen. It is not a probability that a mistake exists.
+- Deleted code is listed as not analysed; what used it is not looked for.
 - Calls made through reflection, generated code or compiler-loaded analyzers are not edges in the graph.
-- A test project that does not compile on either version is reported as not built, and its tests as giving no evidence.
-- When it builds with a newer SDK than the repository pins, the report says so. Old and new code are always built with the same one.
+- It never approves. The report ends with a sign-off block for a named owner.
 
-Work deferred until after the prototype is listed in [TODO.md](TODO.md).
+What is planned, including ideas taken from two other tools, is in [TODO.md](TODO.md).

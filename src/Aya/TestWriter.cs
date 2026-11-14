@@ -49,11 +49,11 @@ public sealed class ProposedTest
 /// Asks a model to write tests for the gaps the review found, and accepts none on its word: each test must
 /// compile, pass on the code as it is, and be measured to do what it was asked for.
 /// </summary>
-public sealed partial class TestWriter(string model, string effort)
+public sealed class TestWriter(ModelSession session)
 {
     private const int MaxAttempts = 3;
 
-    public string Name => $"{model} (effort {effort})";
+    public string Name => session.Name;
 
     public List<ProposedTest> Run(
         Workbench w,
@@ -123,7 +123,7 @@ public sealed partial class TestWriter(string model, string effort)
             string? code = null;
             for (var attempt = 1; attempt <= MaxAttempts; attempt++)
             {
-                code = this.Ask(prompt, out var error);
+                code = session.AskForCode(prompt, out var error);
                 t.Attempts = attempt;
                 if (code is null)
                 {
@@ -170,26 +170,10 @@ public sealed partial class TestWriter(string model, string effort)
     private List<ProposedTest> BuildRequests(Workbench w, CodeGraph graph, List<ChangedSymbol> changed, ReviewResult result)
     {
         var requests = new List<ProposedTest>();
-        var changedTests = changed.Where(c => c.IsTest).Select(c => c.Id).ToHashSet(StringComparer.Ordinal);
-        var demonstrating = result.ProbedTests.Where(p => p.Verdict == "discriminating").Select(p => MethodOf(p.Name)).ToHashSet(StringComparer.Ordinal);
-
-        Node? Pattern(ChangedSymbol c) =>
-            graph.Reach([c.Id], reverse: true)
-                .Select(kv => (Node: graph.Nodes[kv.Key], Distance: kv.Value))
-                .Where(x => x.Node is { IsTest: true, TestName: not null } && w.ProjectPath(x.Node.Project) is not null)
-                // Best pattern first: a test that came with this change and was shown to exercise it.
-                .OrderByDescending(x => demonstrating.Contains(x.Node.TestName!))
-                .ThenByDescending(x => changedTests.Contains(x.Node.Id))
-                .ThenByDescending(x => w.CoverageByProject.TryGetValue(x.Node.Project, out var cov) && cov.ContainsKey(c.File))
-                .ThenBy(x => x.Distance)
-                .ThenBy(x => x.Node.TestName, StringComparer.Ordinal)
-                .Select(x => x.Node)
-                .FirstOrDefault();
-
         void Add(ChangedSymbol c, string reason, List<int> lines, Mutant? mutant)
         {
             var id = "R" + (requests.Count + 1);
-            var pattern = Pattern(c);
+            var pattern = ModelSession.FindPattern(w, graph, result, c.Id, c.File);
             var request = new ProposedTest
             {
                 Request = id,
@@ -233,8 +217,6 @@ public sealed partial class TestWriter(string model, string effort)
     {
         var source = File.ReadAllLines(Path.Combine(w.HeadWorktree, c.File));
         var span = graph.Nodes[c.Id].Spans.FirstOrDefault(s => string.Equals(s.File, c.File, StringComparison.OrdinalIgnoreCase)) ?? new Span(c.File, request.Lines.Min(), request.Lines.Max());
-        var testSpan = pattern.Spans[0];
-        var testLines = File.ReadAllLines(Path.Combine(w.HeadWorktree, testSpan.File));
         var className = $"Aya{request.Request}Tests";
 
         var sb = new StringBuilder();
@@ -258,24 +240,10 @@ public sealed partial class TestWriter(string model, string effort)
         sb.AppendLine($"## Code under test: {c.Display}");
         sb.AppendLine($"File: {c.File}");
         sb.AppendLine("```csharp");
-        sb.Append(Excerpt(source, span.Start, span.End, request.Lines.ToHashSet()));
+        sb.Append(ModelSession.Excerpt(source, span.Start, span.End, request.Lines.ToHashSet()));
         sb.AppendLine("```");
         sb.AppendLine();
-        sb.AppendLine("## An existing test that reaches this code. Follow its style, helpers and usings.");
-        sb.AppendLine($"File: {testSpan.File}   Test: {pattern.TestName}");
-        sb.AppendLine("```csharp");
-        if (testLines.Length <= 260)
-        {
-            sb.AppendLine(string.Join("\n", testLines));
-        }
-        else
-        {
-            sb.AppendLine(string.Join("\n", testLines.Take(40)));
-            sb.AppendLine("// …");
-            sb.AppendLine(string.Join("\n", testLines.Skip(testSpan.Start - 1).Take(Math.Min(120, testSpan.End - testSpan.Start + 1))));
-        }
-
-        sb.AppendLine("```");
+        ModelSession.AppendPattern(sb, w, pattern);
         sb.AppendLine();
         sb.AppendLine("## Rules");
         sb.AppendLine("- Your file is added to the same test project, next to the file above. It can use everything that file uses.");
@@ -283,72 +251,18 @@ public sealed partial class TestWriter(string model, string effort)
         sb.AppendLine("- The tests must compile and pass against the code exactly as it is. You cannot change any other file.");
         sb.AppendLine("- Assert on observable behaviour (output, diagnostics, return values), not merely that nothing throws.");
         sb.AppendLine("- Do not depend on files that do not already exist in the repository.");
+        sb.AppendLine("- Reach the code the way a caller can. Do not use reflection on private members, uninitialised objects or emitted types.");
         return sb.ToString();
-    }
-
-    /// <summary>The declaration's first lines plus a window around each marked line, with gaps elided.</summary>
-    private static string Excerpt(string[] lines, int start, int end, HashSet<int> marked)
-    {
-        var show = new SortedSet<int>(Enumerable.Range(start, Math.Min(3, end - start + 1)));
-        foreach (var m in marked)
-        {
-            for (var l = Math.Max(start, m - 16); l <= Math.Min(end, m + 6); l++)
-            {
-                show.Add(l);
-            }
-        }
-
-        var sb = new StringBuilder();
-        var previous = start - 1;
-        foreach (var l in show.Where(l => l >= 1 && l <= lines.Length))
-        {
-            if (l != previous + 1)
-            {
-                sb.AppendLine("         …");
-            }
-
-            sb.AppendLine($"{(marked.Contains(l) ? ">>" : "  ")}{l,5} | {lines[l - 1]}");
-            previous = l;
-        }
-
-        return sb.ToString();
-    }
-
-    /// <summary>Starts a fresh, tool-less model session with the prompt on standard input and returns the code it wrote.</summary>
-    private string? Ask(string prompt, out string error)
-    {
-        var cwd = Path.Combine(Paths.AyaHome, "model-cwd");
-        Directory.CreateDirectory(cwd);
-        ProcResult answer;
-        try
-        {
-            answer = Proc.Run(
-                "claude",
-                ["-p", "--model", model, "--effort", effort, "--tools", string.Empty, "--strict-mcp-config", "--no-session-persistence", "--output-format", "text"],
-                cwd,
-                10 * 60 * 1000,
-                prompt);
-        }
-        catch (AyaException ex)
-        {
-            error = ex.Message;
-            return null;
-        }
-
-        if (!answer.Ok || answer.StdOut.Trim().Length == 0)
-        {
-            error = answer.ExitCode == -1 ? "timed out" : $"exit code {answer.ExitCode}: {answer.StdErr.Trim().Split('\n').FirstOrDefault()}";
-            return null;
-        }
-
-        error = string.Empty;
-        var blocks = CodeBlock().Matches(answer.StdOut).Select(m => m.Groups[1].Value).ToList();
-        return blocks.Count > 0 ? blocks.MaxBy(b => b.Length) : answer.StdOut;
     }
 
     /// <summary>Builds and runs the candidate in the scratch copy of the new code, then removes it again.</summary>
     private (string Status, string Detail, List<int> Covers, List<string> Tests) Check(Workbench w, ProposedTest t, string code, int attempt, Dictionary<string, string> mutantTexts)
     {
+        if (ModelSession.Trick(code) is { } trick)
+        {
+            return ("rejected-artificial", ModelSession.TrickMessage(trick), [], []);
+        }
+
         var className = $"Aya{t.Request}Tests";
         var dir = Path.Combine(w.Work, Path.GetDirectoryName(t.TestProject!)!, "AyaCandidates");
         Directory.CreateDirectory(dir);
@@ -363,6 +277,11 @@ public sealed partial class TestWriter(string model, string effort)
                 return ("rejected-compile", "It does not compile:\n" + string.Join("\n", run.BuildErrors.Take(6)), [], []);
             }
 
+            if (run.TimedOut)
+            {
+                return ("rejected-no-effect", "The run was stopped at the time limit, so the test could not be judged.", [], []);
+            }
+
             if (run.Results.Count == 0)
             {
                 return ("rejected-compile", $"The test runner found no test in a class named {className}.", [], []);
@@ -372,6 +291,12 @@ public sealed partial class TestWriter(string model, string effort)
             if (run.Results.FirstOrDefault(r => r.Failed) is { } failed)
             {
                 return ("fails-on-current-code", $"{failed.Name} fails on the code as it is:\n{failed.Message}", [], names);
+            }
+
+            // Not failing is not passing: a skipped or inconclusive test has shown nothing.
+            if (run.Results.FirstOrDefault(r => !r.Passed) is { } idle)
+            {
+                return ("rejected-no-effect", $"{idle.Name} did not run to a result ({idle.Outcome}); every test must pass.", [], names);
             }
 
             if (t.Reason == "never-executed")
@@ -389,9 +314,9 @@ public sealed partial class TestWriter(string model, string effort)
 
             var broken = w.WithFile(t.File, mutantTexts[t.MutantId!], () =>
                 TestRunner.Run(w.Work, t.TestProject!, w.RunsDir, label + "-broken", [className], coverage: false, w.SdkFolder, 8 * 60 * 1000));
-            if (!broken.Built)
+            if (!broken.Built || broken.TimedOut)
             {
-                return ("rejected-no-effect", "With the line altered the project did not compile, so the test could not be judged.", [], names);
+                return ("rejected-no-effect", "With the line altered the project did not compile or the run hung, so the test could not be judged.", [], names);
             }
 
             return broken.Results.Any(r => r.Failed)
@@ -432,8 +357,4 @@ public sealed partial class TestWriter(string model, string effort)
         }
     }
 
-    private static string MethodOf(string testName) => testName.IndexOf('(') is var i and > 0 ? testName[..i] : testName;
-
-    [GeneratedRegex(@"```(?:csharp|cs|c#)?[ \t]*\r?\n(.*?)```", RegexOptions.Singleline | RegexOptions.IgnoreCase)]
-    private static partial Regex CodeBlock();
 }
