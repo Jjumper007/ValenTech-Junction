@@ -23,7 +23,7 @@ public sealed class ProposedTest
 
     public string? TestProject { get; init; }
 
-    /// <summary>accepted | rejected-compile | fails-on-current-code | rejected-no-effect | writer-failed | not-attempted.</summary>
+    /// <summary>accepted | caught-by-other | rejected-compile | fails-on-current-code | rejected-no-effect | writer-failed | not-attempted.</summary>
     public string Status { get; set; } = "not-attempted";
 
     public string Detail { get; set; } = string.Empty;
@@ -84,9 +84,41 @@ public sealed partial class TestWriter(string model, string effort)
         var attemptable = requests.Where(r => r.TestProject is not null).Take(max).ToList();
         w.Trace.Info($"{requests.Count} gap(s): {requests.Count(r => r.Reason == "never-executed")} stretch(es) of unexecuted code, {requests.Count(r => r.Reason == "unnoticed-break")} unnoticed break(s); asking {this.Name} for {attemptable.Count}");
 
+        // A test written for one break often catches others on the same line. Each accepted test is therefore run
+        // against every other unnoticed break, so that no break is reported as open when a proposed test closes it.
+        var accepted = new List<(ProposedTest Test, string Code)>();
+        var compared = new HashSet<(string Break, string Test)>();
+        bool ClosedByAnother(ProposedTest t)
+        {
+            if (t.Reason != "unnoticed-break")
+            {
+                return false;
+            }
+
+            foreach (var (other, otherCode) in accepted.Where(a => a.Test.TestProject == t.TestProject && compared.Add((t.Request, a.Test.Request))))
+            {
+                if (!Catches(w, t, other, otherCode, mutantTexts))
+                {
+                    continue;
+                }
+
+                var own = t.Attempts > 0 ? $" Its own {t.Attempts} attempt(s) ended as {t.Status}." : string.Empty;
+                (t.Status, t.Detail) = ("caught-by-other", $"the test accepted for {other.Request} fails when this line is altered, so this break needs no test of its own.{own}");
+                w.Trace.Info($"      {t.Request}: caught by the test accepted for {other.Request}");
+                return true;
+            }
+
+            return false;
+        }
+
         foreach (var t in attemptable)
         {
             w.Trace.Info($"{t.Request}  {(t.Reason == "never-executed" ? "never executed" : "unnoticed break")}: {t.Symbol}, line(s) {ReviewCommand.Ranges(t.Lines)}" + (t.Break is null ? string.Empty : $"  [{t.Break}]"));
+            if (ClosedByAnother(t))
+            {
+                continue;
+            }
+
             var prompt = t.Prompt;
             string? code = null;
             for (var attempt = 1; attempt <= MaxAttempts; attempt++)
@@ -118,7 +150,17 @@ public sealed partial class TestWriter(string model, string effort)
                 var name = t.Status == "accepted" ? t.Request + ".cs" : t.Request + ".rejected.cs";
                 File.WriteAllText(Path.Combine(proposedDir, name), code);
                 t.TestFile = "proposed-tests/" + name;
+                if (t.Status == "accepted")
+                {
+                    accepted.Add((t, code));
+                }
             }
+        }
+
+        // Breaks whose own test was rejected before a later test was accepted.
+        foreach (var t in attemptable.Where(t => t.Status != "accepted" && t.Status != "caught-by-other"))
+        {
+            ClosedByAnother(t);
         }
 
         return requests;
@@ -355,6 +397,30 @@ public sealed partial class TestWriter(string model, string effort)
             return broken.Results.Any(r => r.Failed)
                 ? ("accepted", "passes on the code as it is and fails when the line is altered", [], names)
                 : ("rejected-no-effect", "The tests pass on the code as it is, but they still pass when the line is altered as described.", [], names);
+        }
+        finally
+        {
+            File.Delete(file);
+            if (!Directory.EnumerateFileSystemEntries(dir).Any())
+            {
+                Directory.Delete(dir);
+            }
+        }
+    }
+
+    /// <summary>Whether a test already accepted for another request fails once this request's line is altered.</summary>
+    private static bool Catches(Workbench w, ProposedTest t, ProposedTest other, string otherCode, Dictionary<string, string> mutantTexts)
+    {
+        var dir = Path.Combine(w.Work, Path.GetDirectoryName(t.TestProject!)!, "AyaCandidates");
+        Directory.CreateDirectory(dir);
+        var file = Path.Combine(dir, other.Request + ".cs");
+        File.WriteAllText(file, otherCode);
+        try
+        {
+            var label = Path.Combine("written-tests", $"{t.Request}-against-{other.Request}");
+            var broken = w.WithFile(t.File, mutantTexts[t.MutantId!], () =>
+                TestRunner.Run(w.Work, t.TestProject!, w.RunsDir, label, [$"Aya{other.Request}Tests"], coverage: false, w.SdkFolder, 8 * 60 * 1000));
+            return broken.Built && broken.Results.Any(r => r.Failed);
         }
         finally
         {

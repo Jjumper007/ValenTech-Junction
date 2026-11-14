@@ -95,12 +95,17 @@ public static class MutationRunner
             }
         }
 
-        // Spend the budget across lines: one mutant for every line first, then a second for each, and so on.
+        // Spend the budget across units first and across lines second: every changed unit gets one break before any
+        // gets a second, and inside a unit every line gets one before any line gets another.
+        string UnitOf(Mutant m) => targets.FirstOrDefault(c => c.File == m.File && c.ChangedLines.Contains(m.Line))?.Id ?? m.File;
         var runnable = all
             .Where(m => m.Status == "not-run")
             .GroupBy(m => (m.File, m.Line))
             .SelectMany(g => g.Select((m, round) => (Mutant: m, Round: round)))
             .OrderBy(x => x.Round)
+            .GroupBy(x => UnitOf(x.Mutant))
+            .SelectMany(g => g.Select((x, turn) => (x.Mutant, Turn: turn)))
+            .OrderBy(x => x.Turn)
             .Select(x => x.Mutant)
             .Take(max)
             .ToList();
@@ -220,6 +225,10 @@ public static class Mutator
         [SyntaxKind.LessThanOrEqualExpression] = (SyntaxKind.GreaterThanExpression, SyntaxKind.GreaterThanToken),
         [SyntaxKind.LogicalAndExpression] = (SyntaxKind.LogicalOrExpression, SyntaxKind.BarBarToken),
         [SyntaxKind.LogicalOrExpression] = (SyntaxKind.LogicalAndExpression, SyntaxKind.AmpersandAmpersandToken),
+        [SyntaxKind.AddExpression] = (SyntaxKind.SubtractExpression, SyntaxKind.MinusToken),
+        [SyntaxKind.SubtractExpression] = (SyntaxKind.AddExpression, SyntaxKind.PlusToken),
+        [SyntaxKind.MultiplyExpression] = (SyntaxKind.DivideExpression, SyntaxKind.SlashToken),
+        [SyntaxKind.DivideExpression] = (SyntaxKind.MultiplyExpression, SyntaxKind.AsteriskToken),
     };
 
     /// <summary>Returns each mutant together with the full text of the file once it is applied.</summary>
@@ -258,13 +267,40 @@ public static class Mutator
         {
             switch (node)
             {
-                case BinaryExpressionSyntax binary when Swaps.TryGetValue(binary.Kind(), out var to):
+                case BinaryExpressionSyntax binary when Swaps.TryGetValue(binary.Kind(), out var to) && !IsStringConcatenation(binary):
                     var op = binary.OperatorToken;
                     Add(
                         binary,
                         SyntaxFactory.BinaryExpression(to.Expression, binary.Left, SyntaxFactory.Token(op.LeadingTrivia, to.Token, op.TrailingTrivia), binary.Right),
                         op,
                         $"{op.Text} → {SyntaxFacts.GetText(to.Token)}");
+                    if (binary.IsKind(SyntaxKind.LogicalAndExpression) || binary.IsKind(SyntaxKind.LogicalOrExpression))
+                    {
+                        // Dropping one side says which half of the condition no test depends on.
+                        Add(binary, binary.Left.WithTriviaFrom(binary), op, $"a {op.Text} b → a");
+                        Add(binary, binary.Right.WithTriviaFrom(binary), op, $"a {op.Text} b → b");
+                    }
+
+                    break;
+
+                case ReturnStatementSyntax ret when ret.Expression is { } returned && IsReplaceable(returned):
+                    Add(returned, Default(returned), ret.ReturnKeyword, "return x → return default");
+                    break;
+
+                case ArrowExpressionClauseSyntax arrow when ReturnsValue(arrow) && IsReplaceable(arrow.Expression):
+                    Add(arrow.Expression, Default(arrow.Expression), arrow.Expression.GetFirstToken(), "=> x → => default");
+                    break;
+
+                case ArgumentSyntax argument when argument.RefKindKeyword.IsKind(SyntaxKind.None) && IsCall(argument.Expression):
+                    Add(argument.Expression, Default(argument.Expression), argument.Expression.GetFirstToken(), "call passed as argument → default");
+                    break;
+
+                case LiteralExpressionSyntax number when number.IsKind(SyntaxKind.NumericLiteralExpression) && number.Token.Value is int n && n < int.MaxValue:
+                    Add(
+                        number,
+                        SyntaxFactory.LiteralExpression(SyntaxKind.NumericLiteralExpression, SyntaxFactory.Literal(n + 1)).WithTriviaFrom(number),
+                        number.Token,
+                        $"{n} → {n + 1}");
                     break;
 
                 case IsPatternExpressionSyntax isPattern:
@@ -321,4 +357,40 @@ public static class Mutator
 
     private static ExpressionSyntax Negate(ExpressionSyntax condition) =>
         SyntaxFactory.PrefixUnaryExpression(SyntaxKind.LogicalNotExpression, SyntaxFactory.ParenthesizedExpression(condition.WithoutTrivia())).WithTriviaFrom(condition);
+
+    /// <summary>The value every type has before anything is assigned: null, zero or false.</summary>
+    private static ExpressionSyntax Default(ExpressionSyntax original) =>
+        SyntaxFactory.ParseExpression("default!").WithTriviaFrom(original);
+
+    /// <summary>A value that replacing with the default would actually change.</summary>
+    private static bool IsReplaceable(ExpressionSyntax value) =>
+        value is not (LiteralExpressionSyntax or DefaultExpressionSyntax or ThrowExpressionSyntax)
+        && !(value is PostfixUnaryExpressionSyntax { Operand: LiteralExpressionSyntax or DefaultExpressionSyntax });
+
+    /// <summary>A computed value, as opposed to a name or a constant. <c>nameof(x)</c> looks like a call but is a constant.</summary>
+    private static bool IsCall(ExpressionSyntax value) =>
+        value is ConditionalAccessExpressionSyntax
+        || (value is InvocationExpressionSyntax call && call.Expression is not IdentifierNameSyntax { Identifier.Text: "nameof" });
+
+    /// <summary>Whether an expression body produces a value, so that replacing it still compiles.</summary>
+    private static bool ReturnsValue(ArrowExpressionClauseSyntax arrow) => arrow.Parent switch
+    {
+        MethodDeclarationSyntax method => !IsVoidLike(method.ReturnType),
+        LocalFunctionStatementSyntax local => !IsVoidLike(local.ReturnType),
+        PropertyDeclarationSyntax or IndexerDeclarationSyntax or OperatorDeclarationSyntax or ConversionOperatorDeclarationSyntax => true,
+        AccessorDeclarationSyntax accessor => accessor.IsKind(SyntaxKind.GetAccessorDeclaration),
+        _ => false,
+    };
+
+    private static bool IsVoidLike(TypeSyntax type) => type.ToString() is "void" or "Task" or "ValueTask";
+
+    /// <summary>Swapping + for - on text does not compile, so it is not worth a build.</summary>
+    private static bool IsStringConcatenation(BinaryExpressionSyntax binary) =>
+        binary.IsKind(SyntaxKind.AddExpression)
+        && (IsText(binary.Left) || IsText(binary.Right));
+
+    private static bool IsText(ExpressionSyntax value) =>
+        value.IsKind(SyntaxKind.StringLiteralExpression)
+        || value is InterpolatedStringExpressionSyntax
+        || (value is BinaryExpressionSyntax inner && IsStringConcatenation(inner));
 }

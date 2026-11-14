@@ -24,12 +24,14 @@ Run against the four agent-written branches of `te-industry-tech-office/junction
 
 | Branch | Files | Changed lines | Lines left for a human | Notable finding |
 |---|---:|---:|---:|---|
-| `ju26-issue-2283` | 4 | 228 | 14 | All 3 new tests fail on the old code and all 10 changed lines ran, yet one deliberate break of the new condition goes unnoticed |
+| `ju26-issue-2283` | 4 | 228 | 14 | All 3 new tests fail on the old code and all 10 changed lines ran, yet 3 of 11 deliberate breaks go unnoticed, all on the one new condition |
 | `ju26-issue-2234` | 4 | 266 | 108 | 6 of the 10 new tests pass on the old code; 5 changed lines never ran |
 | `ju26-issue-2297` | 237 | 1392 | 31 | 221 expected-output files share one 3-line edit |
 | `ju26-issue-2129` | 28 | 1043 | 349 | 65 changed executable lines never ran; 4 of 16 deliberate breaks go unnoticed |
 
-These figures are from runs with `--mutate --write-tests`. A plain run takes four to five minutes on a laptop and executes roughly 1,200 tests on both versions; mutation and written tests add five to ten minutes.
+These figures are from runs with `--mutate --write-tests`. The first row was run without a limit on breaks and with
+the full set of alterations; the other three predate the alterations of returned and passed values and used the
+default limit of 20. A plain run takes four to five minutes on a laptop and executes roughly 1,200 tests on both versions; mutation and written tests add five to ten minutes.
 
 ## Running it
 
@@ -62,15 +64,22 @@ Output goes to `aya-out/<head>/`. Clones and worktrees are kept under `~/.aya` (
 ### Going deeper: `--mutate` and `--write-tests`
 
 Coverage says a changed line ran. It does not say anything checked what the line did. `--mutate` asks that
-question directly: it alters each changed line (flips a comparison, negates a condition, removes a statement),
-re-runs only the test projects that execute that line, and records whether a test that passed before now fails.
-A break no test notices is listed in the report as not checked.
+question directly: it alters each changed line (flips a comparison, negates a condition, drops one side of an
+`&&` or `||`, removes a statement, replaces a returned value or a call passed as an argument with the default,
+changes a number), re-runs only the test projects that execute that line, and records whether a test that passed
+before now fails. A break no test notices is listed in the report as not checked. The limit is spent across
+changed units first, so every unit gets one break before any gets a second.
 
 `--write-tests` then asks a model to fill the gaps: one request per stretch of unexecuted code and per unnoticed
 break. Nothing the model writes is taken on trust. Each test is added to a scratch copy of the code and must
 compile, pass, and be measured to execute the target lines (or to fail once the line is altered). A rejected test
-is sent back with the compiler or test output, up to three times. Accepted tests are saved under
+is sent back with the compiler or test output, up to three times. Each accepted test is also run against the
+other unnoticed breaks, since one test often catches several. Accepted tests are saved under
 `proposed-tests/` as proposals; they are not added to the change, and the report says a model chose what they assert.
+
+Accepted does not mean worth keeping. Some breaks change nothing a caller could observe, and a model asked to
+catch one may build a state that cannot occur in order to pass the check. On `ju26-issue-2283` one of the two
+accepted tests does exactly that, so a person has to read a proposed test before adopting it.
 
 The writer is the `claude` command line run as a fresh session with no tools (`--writer-model`, default
 `claude-opus-5-5`; `--writer-effort`, default `medium`).

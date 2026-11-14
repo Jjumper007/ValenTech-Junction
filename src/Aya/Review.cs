@@ -957,12 +957,14 @@ public static class ReviewCommand
         {
             var tried = result.ProposedTests.Where(t => t.Status != "not-attempted").ToList();
             var accepted = tried.Where(t => t.Status == "accepted").ToList();
+            var closed = tried.Count(t => t.Reason == "unnoticed-break" && t.Status is "accepted" or "caught-by-other");
+            var asked = tried.Count(t => t.Attempts > 0);
             list.Add(new Evidence(
                 Next(),
                 "written-tests",
                 "info",
-                $"{accepted.Count} of {tried.Count} tests written by {result.TestWriter} were accepted: they compile, pass, and now execute {accepted.Sum(t => t.CoversLines.Count)} previously unexecuted line(s) and catch {accepted.Count(t => t.Reason == "unnoticed-break")} previously unnoticed break(s)",
-                $"{result.TestWriter} wrote them; dotnet test and coverage checked each one",
+                $"{accepted.Count} of {asked} tests written by {result.TestWriter} were accepted: they compile, pass, and now execute {accepted.Sum(t => t.CoversLines.Count)} previously unexecuted line(s) and catch {closed} of {tried.Count(t => t.Reason == "unnoticed-break")} previously unnoticed break(s)",
+                $"{result.TestWriter} wrote them; dotnet test and coverage checked each one, and each accepted test was run against every other unnoticed break",
                 tried.Count > accepted.Count ? string.Join("\n", tried.Where(t => t.Status != "accepted").Select(t => $"{t.Request}: {t.Status} — {t.Detail}")) : null));
         }
     }
