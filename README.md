@@ -9,6 +9,9 @@ it deserves a person's attention before approval, with a measurement behind ever
 approves and it never says something can be skipped: the last tier of the list means *no signal was found*, not
 *this is safe*. A named person decides how far down to read, and signs.
 
+> **For now AYA reviews C# only.** The architecture was built to grow beyond it: the arbiter, the ordering rule,
+> the kept tests, the judge and the reports know nothing about the language. See [Limits](#limits).
+
 - [How it works](#how-it-works)
 - [Quick start](#quick-start)
 - [Reading the output](#reading-the-output)
@@ -254,7 +257,15 @@ results/            what AYA wrote on the four challenge branches, and the contr
 - A line that ran under a passing test is not proven correct. An accepted test is not proven worth keeping.
 - Deleted code is listed as not analysed. Calls made through reflection or generated code are not edges of the
   graph.
-- It reviews C#. The input layer of the sweep knows one kind of input, C# source.
+- **For now it reviews C# only**, and the input layer of the sweep knows one kind of input, C# source. That is
+  where the prototype stops, not where the design does. The parts that speak C# are few, and each sits in its own
+  place: the dependency graph and the reading of declarations (`CodeGraph.cs`, `Diff.cs`, on the Roslyn
+  compiler), the deliberate breaks (`Mutation.cs`), the builder of inputs (`Sweep.cs`), the description of what
+  the changed lines consist of (in `Attention.cs`) and the test runner (`TestRunner.cs`, `dotnet test` with
+  coverage). Everything else works on two working copies, test results and text: the old code as arbiter, the
+  comparison of old and new, what the change's own text explains, the tests kept between reviews, the judge, the
+  ordering rule and the reports. Another language needs those parts written for it, and nothing else. This has
+  not been tried yet.
 - It never approves. Every report ends with a sign-off block for a named owner.
 
 ## What comes next
@@ -267,4 +278,6 @@ results/            what AYA wrote on the four challenge branches, and the contr
   nothing" is measured and not left to a reading.
 - Builders of inputs for code that takes values instead of source: boundary and random values with the old code
   as the oracle.
+- A second language. The parts that speak C# (graph, deliberate breaks, builder of inputs, test runner) written
+  for another one, to show that the rest carries over unchanged.
 - A fixed harness per kind of code, to take the last model out of the sweep.

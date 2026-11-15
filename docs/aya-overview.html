@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AYA · Earned trust in AI-written code</title>
+<style>
+  :root {
+    --ink: #17171a; --soft: #5b5b66; --line: #dcdce3; --paper: #ffffff; --wash: #f5f5f8;
+    --det: #0f7a5a; --det-bg: #e2f4ec; --mod: #5b3fc4; --mod-bg: #ece8fb; --op: #a65f00; --op-bg: #fcf0d8;
+    --alarm: #b3261e; --alarm-bg: #fbe5e2; --accent: #1746d1;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body { margin: 0; background: var(--wash); color: var(--ink); font: 15px/1.5 "Segoe UI", system-ui, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 28px 16px 60px; }
+  section { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 26px 30px; margin: 0 0 18px; }
+  h1 { font-size: 40px; line-height: 1.08; margin: 0 0 10px; letter-spacing: -1px; }
+  h2 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.3px; }
+  h3 { font-size: 16px; margin: 0 0 4px; }
+  p { margin: 6px 0; } .lead { font-size: 18px; color: var(--soft); max-width: 62ch; }
+  .kicker { font-size: 12px; font-weight: 700; letter-spacing: 1.4px; text-transform: uppercase; color: var(--accent); margin: 0 0 6px; }
+  .sub { color: var(--soft); margin: 0 0 16px; max-width: 78ch; }
+  code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--wash); border: 1px solid var(--line); padding: 0 4px; border-radius: 4px; }
+  .hero { background: var(--ink); color: #fff; border: 0; padding: 38px 34px; }
+  .hero .lead { color: #c9c9d6; } .hero .kicker { color: #8fb0ff; }
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 24px; }
+  .tile { background: #26262c; border-radius: 12px; padding: 14px 14px 12px; }
+  .tile b { display: block; font-size: 30px; line-height: 1; letter-spacing: -0.5px; }
+  .tile span { font-size: 12.5px; color: #c9c9d6; display: block; margin-top: 6px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .box { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .box p { font-size: 14px; color: var(--soft); }
+  .bad { background: var(--alarm-bg); border-color: transparent; } .bad h3 { color: var(--alarm); }
+  .good { background: var(--det-bg); border-color: transparent; } .good h3 { color: var(--det); }
+  .chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 9px; border-radius: 999px; margin-right: 6px; }
+  .c-det { background: var(--det-bg); color: var(--det); } .c-mod { background: var(--mod-bg); color: var(--mod); } .c-op { background: var(--op-bg); color: var(--op); }
+  .new { font-size: 10.5px; font-weight: 800; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 2px; }
+
+  .pipe { display: grid; gap: 10px; }
+  .row { display: grid; grid-template-columns: 132px 1fr; gap: 12px; position: relative; }
+  .row + .row::before { content: "▼"; position: absolute; left: 56px; top: -14px; font-size: 11px; color: var(--soft); }
+  .name { background: var(--ink); color: #fff; border-radius: 10px; padding: 10px 12px; font-weight: 700; font-size: 14px; display: flex; flex-direction: column; justify-content: center; }
+  .name small { font-weight: 400; opacity: .75; font-size: 11.5px; }
+  .cells { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+  .cell { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 8px; padding: 7px 10px; font-size: 13px; }
+  .cell b { display: block; font-size: 13.5px; } .cell span { color: var(--soft); }
+  .d { border-left-color: var(--det); } .m { border-left-color: var(--mod); } .o { border-left-color: var(--op); }
+
+  .inno { display: grid; grid-template-columns: 44px 1fr; gap: 14px; padding: 14px 0; border-top: 1px solid var(--line); }
+  .inno:first-of-type { border-top: 0; }
+  .num { width: 44px; height: 44px; border-radius: 12px; background: var(--ink); color: #fff; font-weight: 800; font-size: 19px; display: grid; place-items: center; }
+  .inno p { font-size: 14.5px; }
+  .fact { font-size: 13.5px; background: var(--wash); border-left: 3px solid var(--accent); padding: 6px 10px; margin-top: 8px; border-radius: 0 6px 6px 0; }
+
+  .layer { display: grid; grid-template-columns: 1fr 22px 1.3fr 22px 1fr; align-items: stretch; margin-top: 10px; }
+  .layer .col { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .layer .col b { font-size: 14px; } .layer ul { margin: 6px 0 0; padding-left: 16px; } .layer li { margin: 2px 0; }
+  .arr { display: grid; place-items: center; color: var(--soft); }
+
+  .funnel div { border-radius: 8px; padding: 8px 14px; margin: 5px 0; display: flex; justify-content: space-between; gap: 10px; font-size: 14px; }
+  .f1 { background: var(--line); width: 100%; } .f2 { background: var(--det-bg); color: var(--det); width: 86%; }
+  .f3 { background: var(--op-bg); color: var(--op); width: 64%; } .f4 { background: var(--alarm-bg); color: var(--alarm); width: 46%; font-weight: 700; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+  th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .6px; color: var(--soft); }
+  .bar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; margin: 8px 0 6px; font-size: 13px; font-weight: 700; }
+  .bar span { display: grid; place-items: center; color: #fff; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--soft); }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 6px; }
+  .tiers { display: grid; gap: 4px; } .tiers div { display: grid; grid-template-columns: 30px 1fr; gap: 10px; font-size: 13.5px; align-items: center; }
+  .tiers b { text-align: center; border-radius: 6px; padding: 1px 0; background: var(--line); }
+  .case { display: grid; grid-template-columns: 1fr 44px 1fr; align-items: stretch; margin-top: 6px; }
+  .case .side { border-radius: 12px; padding: 16px 18px; }
+  .case .green { background: var(--det-bg); } .case .red { background: var(--alarm-bg); }
+  .case h3 { font-size: 17px; } .case .green h3 { color: var(--det); } .case .red h3 { color: var(--alarm); }
+  .case ul { list-style: none; margin: 8px 0 0; padding: 0; font-size: 14px; }
+  .case li { padding: 3px 0 3px 24px; position: relative; }
+  .case .green li::before { content: "✓"; position: absolute; left: 2px; color: var(--det); font-weight: 800; }
+  .case .red li::before { content: "✗"; position: absolute; left: 2px; color: var(--alarm); font-weight: 800; }
+  .case .mid { display: grid; place-items: center; font-size: 24px; color: var(--soft); }
+  .verdict { font-weight: 800; font-size: 15px; margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(0,0,0,.12); }
+  table.vs td:first-child { font-weight: 700; width: 17%; } table.vs td:nth-child(2) { color: var(--soft); width: 36%; }
+  table.vs td:nth-child(3) { background: var(--det-bg); } table.vs th:nth-child(3) { color: var(--det); }
+  table.vs td b { color: var(--det); }
+  .strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 14px; }
+  .strip div { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 13px; color: var(--soft); }
+  .strip b { display: block; font-size: 20px; color: var(--ink); letter-spacing: -0.3px; }
+  @media (max-width: 760px) { .case { grid-template-columns: 1fr; } .case .mid { height: 30px; } .strip { grid-template-columns: 1fr 1fr; } }
+  .quote { font-size: 20px; line-height: 1.35; font-weight: 650; letter-spacing: -0.2px; border-left: 4px solid var(--accent); padding-left: 16px; margin: 6px 0; }
+  .foot { font-size: 12.5px; color: var(--soft); text-align: center; margin-top: 20px; }
+
+  @media (max-width: 760px) { .tiles, .grid3 { grid-template-columns: 1fr 1fr; } .grid2 { grid-template-columns: 1fr; } .row { grid-template-columns: 1fr; } .row + .row::before { left: 50%; } .layer { grid-template-columns: 1fr; } .arr { transform: rotate(90deg); height: 22px; } .f2, .f3, .f4 { width: 100%; } }
+  @page { size: A4; margin: 12mm; }
+  @media print {
+    body { background: #fff; font-size: 12.5px; } main { max-width: none; padding: 0; }
+    section { border: 0; border-radius: 0; padding: 0 0 5mm; margin: 0 0 5mm; border-bottom: 1px solid var(--line); }
+    .box, .case, .row, .layer, .funnel, .tiles, .strip, .bar, table tr, h2, h3 { break-inside: avoid; } h2, h3, .kicker { break-after: avoid; }
+    .hero { border-radius: 10px; padding: 9mm; margin-bottom: 6mm; border-bottom: 0; }
+    h1 { font-size: 32px; } h2 { font-size: 20px; } .inno { break-inside: avoid; } .pagebreak { break-before: page; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<section class="hero">
+  <p class="kicker">Junction 2026 · Tieto challenge · Earned trust in AI code</p>
+  <h1>AYA</h1>
+  <p class="lead">A second AI that reads AI-written code and says "looks good" asks to be believed. AYA does not ask that. It runs the code before and after the change, lets the old code be the judge, and tells the person who signs <b style="color:#fff">where to look and why</b>. No black box decides anything: every line of a report can be opened and run again.</p>
+  <div class="tiles">
+    <div class="tile"><b>3 of 4</b><span>agent-written changes with green tests where AYA demonstrated a regression that every existing test missed. On the fourth, a new feature, it shows exactly what no test covers</span></div>
+    <div class="tile"><b>15</b><span>false alarms written by models, thrown out by the old code before any person had to read them</span></div>
+    <div class="tile"><b>16</b><span>claims of independent reviewers turned from an opinion into a demonstrated fact, and kept as permanent checks</span></div>
+    <div class="tile"><b>2,500+</b><span>inputs per change run through old and new code, built by rule, none chosen by a model</span></div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">The problem</p>
+  <h2>A verdict is not something a person can sign under</h2>
+  <p class="sub">An agent writes a thousand lines in minutes. A person still approves them. The common answer is a second model that reviews the first.</p>
+  <div class="grid2">
+    <div class="box bad"><h3>A reviewing model gives a verdict</h3><p>"I would not approve this." It may be right. But it changes from one run to the next, its silence about a file means nothing, and the person has no way to weigh it except by trusting the model.</p></div>
+    <div class="box good"><h3>AYA gives evidence, in order</h3><p>"This input compiled before the change and does not now." "No test needs these four lines." "2,542 inputs give the same result, and they run every changed line." Each can be re-run by anyone.</p></div>
+  </div>
+  <p class="quote" style="margin-top:16px">Trust is earned by the measurement, not by the model that proposes it.</p>
+</section>
+
+<section>
+  <p class="kicker">One change, told twice</p>
+  <h2>Everything said "ship it". AYA showed the input that breaks.</h2>
+  <p class="sub">An agent was asked to mark all generated code as excluded from code coverage. It changed 237 files. This is the same change, seen by the checks a team already has and by AYA.</p>
+  <div class="case">
+    <div class="side green">
+      <h3>What every usual check said</h3>
+      <ul>
+        <li>It compiles</li>
+        <li>1,240 existing tests pass, none regressed</li>
+        <li>Both new tests pass, and both fail without the change</li>
+        <li>100% of the changed lines are executed by tests</li>
+        <li>7 of 7 deliberate breaks are caught by a test</li>
+      </ul>
+      <p class="verdict">Any pipeline merges this.</p>
+    </div>
+    <div class="mid">➜</div>
+    <div class="side red">
+      <h3>What AYA put in first place</h3>
+      <ul>
+        <li>3 inputs that compiled before the change no longer compile: <code>CS0579 Duplicate attribute</code></li>
+        <li>They are programs whose author had already written that attribute, the obvious workaround for this very issue</li>
+        <li>No model thought of them: AYA took the inputs of the existing tests and put on them the attribute the change itself writes</li>
+        <li>The old code compiles all three. The change is the cause</li>
+      </ul>
+      <p class="verdict">Users' builds break. Here is the input, run it yourself.</p>
+    </div>
+  </div>
+  <p style="margin-top:12px">And it made the other 236 files readable: the 221 regenerated snapshot files are four variants of one edit, and 1,811 of the 1,860 differences in output are recognised, without a model, as the change showing through. The owner starts at the three that matter.</p>
+</section>
+
+<section>
+  <p class="kicker">Why not just ask a second AI</p>
+  <h2>What AYA gives that a reviewing model cannot</h2>
+  <table class="vs">
+    <tr><th></th><th>A model that reviews</th><th>AYA</th></tr>
+    <tr><td>What you receive</td><td>A verdict and a list of concerns, in prose</td><td>An ordered list where <b>every place has a measurement anyone can run again</b>: a test file, an input, the result on old code and on new</td></tr>
+    <tr><td>False alarms</td><td>You find out by reading each one</td><td><b>Filtered before you see them.</b> 15 sets of model-written tests looked like findings and failed on the old code too. All discarded automatically</td></tr>
+    <tr><td>Run it again</td><td>May answer differently. In our own model-written stages the same step found a regression one day and missed it the next</td><td><b>Identical every pass</b> for everything measured: tests, coverage, deliberate breaks, undone parts and the sweep. And what a model found once is kept and re-run forever</td></tr>
+    <tr><td>Silence</td><td>Did it look and find nothing, or not look? You cannot tell</td><td><b>Silence has a size.</b> "2,542 inputs give the same result on both versions, and they run every changed line"</td></tr>
+    <tr><td>Scope creep</td><td>Visible only if the model happens to notice</td><td><b>Measured.</b> Undo each part of the change: a part no test needs is listed. One fix carried a filter that a single test needed, and the agent had written that test</td></tr>
+    <tr><td>Being talked into it</td><td>A change that documents itself convincingly gets a convincing review</td><td><b>Quotes are checked.</b> A reading of "this was meant" must quote the requirement word for word, and a test named as proof must really fail on the old code. Otherwise it is thrown out</td></tr>
+    <tr><td>What it leaves out</td><td>Unknown</td><td><b>Listed.</b> Every report has a section of what was not checked and what AYA refused to decide</td></tr>
+    <tr><td>Who is accountable</td><td>The model says approve or do not</td><td><b>A named person.</b> AYA never approves; the report ends with a sign-off block</td></tr>
+  </table>
+  <div class="strip">
+    <div><b>14–25 min</b>per change, unattended, on one laptop</div>
+    <div><b>4 at once</b>reviews run in parallel, each in its own working folder</div>
+    <div><b>8–33</b>short model sessions per change; everything else is the compiler and the tests</div>
+    <div><b>74</b>tests of AYA itself, one for every way it was found to overstate</div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">No black boxes</p>
+  <h2>Nothing in a report has to be taken on trust</h2>
+  <p class="sub">A language model is a black box: it cannot show why it said what it said. AYA uses models, and is built so that no black box ever decides anything. Every line of a report can be opened.</p>
+  <div class="grid2">
+    <div class="box"><h3>Every number opens</h3><p>Each figure in the report comes from <code>evidence.json</code>, and the report names that file by its hash. Change a number and the hash no longer matches.</p></div>
+    <div class="box"><h3>Every finding runs</h3><p>Behind each place in the list there is a file: the test, the input, the result on the old code and on the new. Anyone can run it again and get the same answer.</p></div>
+    <div class="box"><h3>The order is a rule, not a score</h3><p>Six tiers, written in one sentence each and printed in every report. No weights, no learned ranking, nothing to tune. The owner can read why an item is third and disagree.</p></div>
+    <div class="box"><h3>What a model touched says so</h3><p>Code a model wrote is saved next to the report, exactly as it was built and run. What a model believes is marked as an opinion, with the words it rests on checked against the requirement.</p></div>
+  </div>
+  <p style="margin-top:12px">Where a black box remains, we say where: the harness that feeds inputs to the sweep is written by a model and accepted for how it behaves (it runs on both versions, repeats on the old code, executes the change), not because someone read it. Replacing it with a fixed one is on the list.</p>
+</section>
+
+<section>
+  <p class="kicker">The architecture</p>
+  <h2>Five layers, and the old code as arbiter of all of them</h2>
+  <p class="sub"><span class="chip c-det">measured, no model</span><span class="chip c-mod">a model writes it, AYA builds and runs it</span><span class="chip c-op">a model's opinion, shown as one</span></p>
+  <p class="sub">The pieces marked <span class="new">OURS</span> are not established techniques: they were designed for AYA.</p>
+  <div class="pipe">
+    <div class="row"><div class="name">Understand<small>what changed</small></div><div class="cells">
+      <div class="cell d"><b>Change map</b><span>every file by role; identical edits grouped</span></div>
+      <div class="cell d"><b>Dependency graph</b><span>from the C# compiler: who uses whom</span></div>
+      <div class="cell d"><b>Two working copies</b><span>old and new, same compiler</span></div></div></div>
+    <div class="row"><div class="name">Measure<small>with the tests</small></div><div class="cells">
+      <div class="cell d"><b>Tests, old vs new</b><span>one by one; which changed lines ran</span></div>
+      <div class="cell d"><b>New tests on old code</b><span>do they fail without the change?</span></div>
+      <div class="cell d"><b>Deliberate breaks</b><span>would any test notice a mistake?</span></div>
+      <div class="cell d"><b>Undo part by part <span class="new">OURS</span></b><span>does any test need this part?</span></div></div></div>
+    <div class="row"><div class="name">Search<small>with inputs</small></div><div class="cells">
+      <div class="cell d"><b>Sweep <span class="new">OURS</span></b><span>thousands of inputs built by rule</span></div>
+      <div class="cell m"><b>Probes</b><span>what a unit does, old vs new</span></div>
+      <div class="cell m"><b>Attack tests</b><span>written to break it; old code decides</span></div>
+      <div class="cell d"><b>Kept tests</b><span>what showed a regression runs forever</span></div></div></div>
+    <div class="row"><div class="name">Read<small>what cannot be measured</small></div><div class="cells">
+      <div class="cell d"><b>Explained by the change <span class="new">OURS</span></b><span>differences made only of its own lines</span></div>
+      <div class="cell o"><b>Judge</b><span>meant, not meant, or build artefact</span></div>
+      <div class="cell o"><b>Requirement</b><span>what it asks for, and which test shows it</span></div></div></div>
+    <div class="row"><div class="name">Order<small>a fixed rule</small></div><div class="cells">
+      <div class="cell d"><b>Six tiers</b><span>printed in the report; nothing leaves the list</span></div>
+      <div class="cell d"><b>Report + evidence</b><span>hashed, with a sign-off block for a named owner</span></div></div></div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">What is new in this architecture</p>
+  <h2>Seven ideas, each with a result behind it</h2>
+
+  <div class="inno"><div class="num">1</div><div>
+    <h3>The old code is the arbiter</h3>
+    <p>Every check runs twice: on the code before the change and on the code after. A test written by a model that fails on the new code is worth nothing until it is run on the old. If it fails there too, the change is not the cause and the test is dropped.</p>
+    <p class="fact">Fifteen sets of model-written tests that looked like findings failed on the old code too, and were discarded on evidence, not on judgement.</p></div></div>
+
+  <div class="inno"><div class="num">2</div><div>
+    <h3>Three kinds of contribution, one rule</h3>
+    <p>What AYA measures. What a model writes, which AYA builds and runs. What a model believes, which is shown as a belief. The rule that separates them: <b>a model may lower trust on its opinion, and raise it only through something that was measured.</b> A model's reading can move an item up the list, never down.</p></div></div>
+
+  <div class="inno"><div class="num">3</div><div>
+    <h3>An input layer: brute force without a model</h3>
+    <p>The best finding of the first day existed because a model happened to think of one input. So inputs are now built by rule, between the tests and the sweep:</p>
+    <div class="layer">
+      <div class="col"><b>Where they come from</b><ul><li>sources the existing tests hold</li><li>analyzer-test sources with their marks removed</li><li>sources that came with the change</li></ul></div>
+      <div class="arr">➜</div>
+      <div class="col"><b>How they are altered</b><ul><li><b>from the change:</b> put on every type the attribute it emits; define the symbol it tests</li><li><b>a family of 34</b>, by scheme over C# syntax: take one thing out, swap for another of its kind, alter a literal, move a type to another library, wrap a member's type</li></ul></div>
+      <div class="arr">➜</div>
+      <div class="col"><b>What is observed</b><ul><li>diagnostics and generated code</li><li>does the tool crash?</li><li>does its output compile?</li><li>what happened to the user's own types?</li></ul></div>
+    </div>
+    <p class="fact">On one change the sweep went from "300 inputs, no difference" to 49 differences in 2,542 inputs, among them generated code that no longer compiles. No model chose any of those inputs.</p></div></div>
+
+  <div class="inno"><div class="num">4</div><div>
+    <h3>The change showing through</h3>
+    <p>A change that alters every output produces hundreds of differences, and the one that matters hides among them. A difference made only of lines the change itself adds or removes is recognised without a model and set aside.</p>
+    <div class="funnel">
+      <div class="f1"><b>All differences between old and new code</b><span>1,860</span></div>
+      <div class="f2"><b>minus those made only of the change's own lines</b><span>1,811 set aside, no model</span></div>
+      <div class="f3"><b>the judge reads what is left</b><span>46, as an opinion</span></div>
+      <div class="f4"><b>what stopped working goes first, whatever anyone thinks</b><span>3</span></div>
+    </div></div></div>
+
+  <div class="inno"><div class="num">5</div><div>
+    <h3>Undo the change, one part at a time</h3>
+    <p>Put the old lines of one part back and run the tests. If they all pass, no test needs that part: nothing shows what it is for. This is how a change that does more than was asked becomes visible.</p>
+    <p class="fact">On one fix, the new filter turned out to be needed by exactly one test, and that test came with the change. An independent reviewer reached the same conclusion by hand.</p></div></div>
+
+  <div class="inno"><div class="num">6</div><div>
+    <h3>Memory: a finding does not depend on luck twice</h3>
+    <p>What a model writes varies. The same stage found a regression one day and missed it the next. So a test that showed a regression is kept and arbitrated again on every later review of the branch.</p>
+    <p class="fact">On one branch the fresh attack found nothing in the last pass. The test kept from the first review still put the regression in first place.</p></div></div>
+
+  <div class="inno"><div class="num">7</div><div>
+    <h3>Opinions with their feet on the ground</h3>
+    <p>A judge says whether a difference was meant, and reads the requirement against the tests. Two things in every reading are checked by AYA: the words it quotes must be in the requirement, and a test it names must be one that really fails on the old code. A reading that fails either check is discarded.</p>
+    <p class="fact">One reading of "this was meant" quoted words that were not in the change. AYA threw it out.</p></div></div>
+</section>
+
+<section>
+  <p class="kicker">What the owner receives</p>
+  <h2>One screen to decide, and everything behind it</h2>
+  <div class="grid2">
+    <div>
+      <p class="sub">The order is a fixed rule, printed in every report, so the owner can disagree with it. Risk is never one score: likelihood, impact, detection and what the analysis cannot see are shown apart.</p>
+      <div class="tiers">
+        <div><b style="background:var(--alarm-bg);color:var(--alarm)">1</b><span>A check that passed on the old code fails on the new</span></div>
+        <div><b style="background:var(--op-bg);color:var(--op)">2</b><span>Changes a result that existed before</span></div>
+        <div><b>3</b><span>Existing code others depend on, where a mistake would go unnoticed</span></div>
+        <div><b>4</b><span>Could not be measured</span></div>
+        <div><b>5</b><span>A mistake here would go unnoticed</span></div>
+        <div><b style="background:var(--det-bg);color:var(--det)">6</b><span>No signal found. Not the same as correct</span></div>
+      </div>
+    </div>
+    <div class="box">
+      <h3>What Tieto asked to see, and where it is</h3>
+      <p><b>What the AI found.</b> The ordered list, with the measurement behind each place.</p>
+      <p><b>What it refused to decide.</b> Whether a difference was meant; whether the requirement is met. Shown as a model's reading, never as a result.</p>
+      <p><b>What it did not check.</b> A section of every report: documentation, deleted code, lines no input reaches.</p>
+      <p><b>A named human stays accountable.</b> Every report ends with a sign-off block: how far down the list the owner looked, and the residual risk they accept.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Results</p>
+  <h2>Four agent-written changes. All pass every existing test.</h2>
+  <table>
+    <tr><th>Change</th><th>Sweep</th><th>What AYA put first</th></tr>
+    <tr><td><b>Coverage attribute on generated code</b><br>237 files</td><td>2,995 inputs<br>3 that worked no longer do</td><td>Projects of users who already have the attribute stop compiling (<code>CS0579</code>). Found by the sweep, two attack tests and eight kept ones</td></tr>
+    <tr><td><b>Crash on types of a referenced assembly</b><br>4 files</td><td>2,542 inputs<br>none differs</td><td>Errors about defective referenced types are no longer reported. The new filter is needed by one test, which came with the change</td></tr>
+    <tr><td><b>Analyzer fix</b><br>4 files</td><td>2,542 inputs<br>49 differ</td><td>A lost diagnostic. Generated code that no longer compiles for a type with a repeated key. Four lines no test needs</td></tr>
+    <tr><td><b>New feature</b><br>28 files</td><td>2,542 inputs<br>none differs</td><td>No regression: 1,274 tests and 2,542 inputs behave the same. None of the five things the requirement asks for is shown by a test; 65 lines never run; three sets of tests about the new feature fail, with no old code to judge them</td></tr>
+  </table>
+  <p class="sub" style="margin-top:10px">Each review takes 14 to 25 minutes on one machine, and the four run at the same time. What is measured came out the same in every pass.</p>
+</section>
+
+<section>
+  <p class="kicker">The test we set ourselves</p>
+  <h2>We put AYA next to four independent reviewers</h2>
+  <p class="sub">Four reviewing agents, one per change, read the issue and the code and ran their own tests. None saw AYA's output. Then we did what AYA is for: we handed their claims to the arbiter.</p>
+
+  <h3>51 tests written by the reviewers, run by AYA on the old and the new code</h3>
+  <div class="bar">
+    <span style="width:31.4%;background:var(--alarm)">16</span><span style="width:15.7%;background:#8a8a99">8</span><span style="width:45.1%;background:var(--mod)">23</span><span style="width:7.8%;background:var(--det)">4</span>
+  </div>
+  <div class="legend"><span><i style="background:var(--alarm)"></i>fail on new, pass on old: the change caused it</span><span><i style="background:#8a8a99"></i>fail on both: not caused by the change</span><span><i style="background:var(--mod)"></i>fail on new, no old code to judge (new feature)</span><span><i style="background:var(--det)"></i>pass on both, as written</span></div>
+  <div class="grid3" style="margin-top:12px">
+    <div class="box good"><h3>16 claims became facts</h3><p>They no longer rest on a reviewer's word. AYA kept them: every later review of those branches runs them again, for free.</p></div>
+    <div class="box"><h3>8 were sorted out</h3><p>True of the code, and not caused by the change: worth knowing, not a reason to reject it. Two of the eight are gaps the change left, which the arbiter cannot yet tell from an old defect.</p></div>
+    <div class="box"><h3>51 of 51 agreed</h3><p>On every test the arbiter's result matched what the reviewer had seen when running it by hand. The arbiter can be relied on.</p></div>
+  </div>
+  <p class="quote" style="margin-top:14px">AYA is not a second reviewer. It is what a reviewer's claim has to pass to be believed.</p>
+
+  <h3 style="margin-top:18px">And on its own, how much of what they found does AYA put in front of the owner?</h3>
+  <div class="bar">
+    <span style="width:37.9%;background:var(--det)">11</span><span style="width:6.9%;background:var(--op)">2</span><span style="width:13.8%;background:#8a8a99">4</span><span style="width:41.4%;background:#c4c4cf;color:var(--ink)">12</span>
+  </div>
+  <div class="legend"><span><i style="background:var(--det)"></i>shown as something measured</span><span><i style="background:var(--op)"></i>shown as a model's opinion</span><span><i style="background:#8a8a99"></i>a signal pointing at the place</span><span><i style="background:#c4c4cf"></i>not shown</span></div>
+  <p style="margin-top:10px">Of their 29 findings, AYA alone shows 17 in some form, 11 of them measured. On the three changes to existing behaviour it shows the regressions that matter; on the new feature it shows less, because the old code has nothing to say there. The reviewers found more, which is the point of joining them: a reviewer proposes, AYA settles. Seven of the eleven measured ones rest on checks that existed before we read the reviews, four on checks we added afterwards.</p>
+</section>
+
+<section>
+  <p class="kicker">Built the way it asks others to be</p>
+  <h2>What went wrong, and what it became</h2>
+  <div class="grid3">
+    <div class="box"><h3>It said things could be skipped</h3><p>An early version reported "14 of 228 lines left to read". An outside audit showed the figure was wrong on two of four changes. AYA now orders and never excludes.</p></div>
+    <div class="box"><h3>A model gamed the check</h3><p>Asked for a test that catches an unobservable break, a model built an impossible object by reflection. Such tests are now refused.</p></div>
+    <div class="box"><h3>Our labels said more than we measured</h3><p>Ten cases, all confirmed in the code. Each became a test of AYA itself: 74 today, one for every way it was found to overstate.</p></div>
+  </div>
+</section>
+
+<section>
+  <p class="kicker">Where it goes from here</p>
+  <h2>What is not solved yet, and why each is within reach</h2>
+  <table>
+    <tr><th>Today</th><th>Next step</th></tr>
+    <tr><td>The sweep's alterations were chosen after reading the reviews. It finds what they found; that says nothing about defects nobody has seen.</td><td>The target repository has 3,300 commits. Run the sweep on past fixes, each against its parent, and count how often it shows the difference the fix made. An uncontaminated measure, and it needs no new code.</td></tr>
+    <tr><td>Alterations are applied one at a time. A defect that needs two at once is missed.</td><td>Apply pairs. The family is already a list of independent operators; composing them is a loop.</td></tr>
+    <tr><td>For a brand-new feature the old code has nothing to say, and AYA shows little beyond "thinly tested".</td><td>Hold new code to what must be true of any input (it does not crash, its output compiles) and let the requirement's own examples become inputs.</td></tr>
+    <tr><td>The judge's reading of a requirement changed from one pass to the next.</td><td>Ask several times and show the agreement, the same way unstable inputs are already discarded by running the old code twice.</td></tr>
+    <tr><td>C# only, and one kind of input: source code.</td><td>The layers do not depend on the language. The graph needs a compiler front end; the arbiter, the sweep and the kept tests need only two working copies and a test runner.</td></tr>
+  </table>
+  <h3 style="margin-top:16px">How it scales</h3>
+  <div class="grid3">
+    <div class="box"><h3>In a pipeline</h3><p>It is a command line with an exit code. One review per pull request, each in its own working folder; four ran in parallel on one laptop.</p></div>
+    <div class="box"><h3>Over time</h3><p>Kept tests accumulate. Every regression ever demonstrated on a branch becomes a permanent check, written once and paid for once.</p></div>
+    <div class="box"><h3>With any reviewer</h3><p>Human or model, a reviewer hands a test to the arbiter and gets back a fact. AYA makes other tools' claims checkable instead of competing with them.</p></div>
+  </div>
+</section>
+
+<p class="foot">AYA · Junction 2026 · Reports for the four changes, the reviewers' findings and tests, and the arbiter's verdicts are in the repository under <code>results/</code>.</p>
+
+</main>
+</body>
+</html>
