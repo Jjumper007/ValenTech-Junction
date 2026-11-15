@@ -7,3 +7,24 @@ explicacion/
 node_modules/
 dist/
 .env
+
+# Test and coverage output
+TestResults/
+*.trx
+coverage*.xml
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local agent settings and scratch
+.claude/
+*.local.json
+
+# Working notes and deliverables handed in apart from the repository
+CONTEXT.md
+TODO.md
+docs/

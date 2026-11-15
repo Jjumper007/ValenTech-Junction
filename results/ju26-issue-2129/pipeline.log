@@ -1,0 +1,479 @@
+
+[00:00] STEP 1  Read the change: which files, and what role each one plays
+        old code 32258fdb  →  new code 083afd99 (ju26-issue-2129)
+        28 files, 1043 changed lines
+        source            8 file(s)  +442 -4
+            src/MessagePack.Annotations/Attributes.cs
+            src/MessagePack.SourceGenerator/Analyzers/MsgPack00xMessagePackAnalyzer.cs
+            src/MessagePack.SourceGenerator/CodeAnalysis/GeneratedFormatterCollector.cs
+            src/MessagePack.SourceGenerator/CodeAnalysis/GeneratedFormatterRequest.cs
+        … and 4 more
+        docs              7 file(s)  +163 -0
+            README.md
+            doc/analyzers/MsgPack019.md
+            doc/analyzers/MsgPack020.md
+            doc/analyzers/MsgPack021.md
+        … and 3 more
+        test              6 file(s)  +397 -0
+            tests/MessagePack.SourceGenerator.ExecutionTests/GeneratedFormatterForExternalTypes.cs
+            tests/MessagePack.SourceGenerator.ExecutionTests/GeneratedFormatterForExternalTypesTests.cs
+            tests/MessagePack.SourceGenerator.ExternalTypes/ExternalPerson.cs
+            tests/MessagePack.SourceGenerator.ExternalTypes/ExternalPoint.cs
+        … and 2 more
+        build-config      3 file(s)  +24 -1
+            tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.ExternalTypes/MessagePack.SourceGenerator.ExternalTypes.csproj
+            tests/MessagePack.SourceGenerator.MapModeExecutionTests/MessagePack.SourceGenerator.MapModeExecutionTests.csproj
+        generated         2 file(s)  +6 -2
+            src/MessagePack.SourceGenerator/Transforms/FormatterTemplate.cs
+            src/MessagePack.SourceGenerator/Transforms/StringKey/StringKeyFormatterTemplate.cs
+        template          2 file(s)  +2 -2
+            src/MessagePack.SourceGenerator/Transforms/FormatterTemplate.tt
+            src/MessagePack.SourceGenerator/Transforms/StringKey/StringKeyFormatterTemplate.tt
+        same edit in 2 generated files (pattern 12d48c953f): +this.Write(" ");  +this.Write("\t");  +this.Write(this.ToStringHelper.ToStringWithCulture(Info.IsUserDeclaredFormatter ? "partial class" : "internal sealed class"));
+
+[00:00] STEP 2  Find the projects the change touches and the test projects that depend on them
+        touched directly:
+            src/MessagePack.Annotations/MessagePack.Annotations.csproj
+            src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+            tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.ExternalTypes/MessagePack.SourceGenerator.ExternalTypes.csproj
+            tests/MessagePack.SourceGenerator.MapModeExecutionTests/MessagePack.SourceGenerator.MapModeExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        test projects that depend on them:
+            tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+            tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+            tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+            tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.MapModeExecutionTests/MessagePack.SourceGenerator.MapModeExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+            tests/MessagePack.Tests/MessagePack.Tests.csproj
+
+[00:00] STEP 3  Run the tests on the NEW code, recording which lines execute
+        .NET SDK 9.0.321 (newest installed; the repo selects 8.0.428)
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   16s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   7.1s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   7.2s
+        MessagePack.SourceGenerator.ExecutionTests        21 passed   0 failed   0 skipped   6.5s
+        MessagePack.SourceGenerator.MapModeExecutionTests    20 passed   0 failed   0 skipped   5.4s
+        MessagePack.SourceGenerator.Tests                173 passed   0 failed   0 skipped   12.4s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   12.6s
+
+[01:07] STEP 4  Break the new code into its smallest units and link them (dependency graph)
+        loading src/MessagePack.Annotations/MessagePack.Annotations.csproj
+        loading src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+        loading tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+        loading tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+        loading tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+        loading tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+        loading tests/MessagePack.SourceGenerator.MapModeExecutionTests/MessagePack.SourceGenerator.MapModeExecutionTests.csproj
+        loading tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        indexing 374 files in 20 projects
+        units (nodes): 6529  =  2699 method, 1163 field, 1158 type, 983 property, 526 ctor
+        links (edges): 20238  =  11522 uses, 7143 type-ref, 809 entry, 764 dispatch
+        cycles collapsed: 105 groups of units that depend on each other (largest has 195 units)
+        layers: 37  (layer 0 depends on nothing else; each layer depends only on lower ones)
+        units per layer: L0=1642  L1=686  L2=521  L3=872  L4=331  L5=153  L6=192  L7=108  …  L36=94
+        test methods found: 640
+
+[01:34] STEP 5  Locate the changed lines in the graph: which units own them
+        Constants.cs:17  →  field Constants.GeneratedMessagePackFormatterAttributeName  [layer 0, added]
+        Constants.cs:18  →  field Constants.GeneratedMessagePackFormatterSurrogatePropertyName  [layer 0, added]
+        GeneratedFormatterCollector.cs:12–18, 300  →  type GeneratedFormatterCollector  [layer 0, added]
+        GeneratedFormatterCollector.cs:19–22  →  field GeneratedFormatterCollector.BinaryWriteTypeFormat  [layer 0, added]
+        GeneratedFormatterCollector.cs:246–260, 262–265, 267–272, 274–275  →  method GeneratedFormatterCollector.GetInstanceMembers(INamedTypeSymbol)  [layer 0, added]
+        GeneratedFormatterCollector.cs:286–291  →  method GeneratedFormatterCollector.GetMemberType(ISymbol)  [layer 0, added]
+        GeneratedFormatterCollector.cs:293–299  →  method GeneratedFormatterCollector.IsPartial(INamedTypeSymbol, CancellationToken)  [layer 0, added]
+        GeneratedFormatterCollector.cs:277–284  →  method GeneratedFormatterCollector.IsPublicReadWrite(ISymbol)  [layer 0, added]
+        GeneratedFormatterRequest.cs:8–13  →  type GeneratedFormatterRequest  [layer 0, added]
+        Attributes.cs:143–167, 177  →  type GeneratedMessagePackFormatterAttribute  [layer 0, added]
+        Attributes.cs:168–176  →  property GeneratedMessagePackFormatterAttribute.SurrogateType  [layer 0, added]
+        MsgPack00xMessagePackAnalyzer.cs:34  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupportedId  [layer 0, added]
+        MsgPack00xMessagePackAnalyzer.cs:32  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartialId  [layer 0, added]
+        MsgPack00xMessagePackAnalyzer.cs:33  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormatterId  [layer 0, added]
+        MsgPack00xMessagePackAnalyzer.cs:35  →  field MsgPack00xMessagePackAnalyzer.SurrogateMemberNotFoundId  [layer 0, added]
+        ObjectSerializationInfo.cs:13–17  →  property ObjectSerializationInfo.IsUserDeclaredFormatter  [layer 0, added]
+        MsgPack00xMessagePackAnalyzer.cs:336–343  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupported  [layer 1, added]
+        MsgPack00xMessagePackAnalyzer.cs:318–325  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartial  [layer 1, added]
+        MsgPack00xMessagePackAnalyzer.cs:327–334  →  field MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormatter  [layer 1, added]
+        MsgPack00xMessagePackAnalyzer.cs:345–352  →  field MsgPack00xMessagePackAnalyzer.SurrogateMemberNotFound  [layer 1, added]
+        MsgPack00xMessagePackAnalyzer.cs:381–385  →  property MsgPack00xMessagePackAnalyzer.SupportedDiagnostics  [layer 2, modified]
+        GeneratedFormatterCollector.cs:215–225, 227–244  →  method GeneratedFormatterCollector.CreateMember(ISymbol, int, string)  [layer 6, added]
+        GeneratedFormatterCollector.cs:128–138, 140–141  →  method GeneratedFormatterCollector.CreateContractlessMembers(INamedTypeSymbol)  [layer 7, added]
+        ObjectSerializationInfo.cs:168  →  method ObjectSerializationInfo.Equals(ObjectSerializationInfo?)  [layer 8, modified]
+        FormatterTemplate.cs:33–35  →  method FormatterTemplate.TransformText()  [layer 13, modified]
+        StringKeyFormatterTemplate.cs:37–39  →  method StringKeyFormatterTemplate.TransformText()  [layer 13, modified]
+        GeneratedFormatterCollector.cs:143–159, 161–167, 169–179, 181–187, 189–198, 200–204, 206–209, 211–213  →  method GeneratedFormatterCollector.CreateSurrogateMembers(INamedTypeSymbol, INamedTypeSymbol, ReferenceSymbols, Action<Diagnostic>?, Location, out bool)  [layer 14, added]
+        GeneratorUtilities.cs:35–36, 38  →  method GeneratorUtilities.GetAnalyzerOption(IncrementalGeneratorInitializationContext)  [layer 14, modified]
+        GeneratedFormatterCollector.cs:24–45, 47–51, 53–61, 63–74, 76–81, 83–85, 87–97, 99–102, 104–119, 121–126  →  method GeneratedFormatterCollector.Collect(Compilation, AnalyzerOptions, ReferenceSymbols, Action<Diagnostic>?, INamedTypeSymbol, INamedTypeSymbol?, CancellationToken)  [layer 15, added]
+        MessagePackGenerator.cs:29–34, 37, 60, 65, 70–76, 115–126, 128–129, 131  →  method MessagePackGenerator.Initialize(IncrementalGeneratorInitializationContext)  [layer 16, modified]
+        ExternalPerson.cs:6–8, 15  →  test type ExternalPerson  [layer 0, added]
+        ExternalPerson.cs:9  →  test property ExternalPerson.Id  [layer 0, added]
+        ExternalPerson.cs:11  →  test property ExternalPerson.Label  [layer 0, added]
+        ExternalPoint.cs:6–8, 12  →  test type ExternalPoint  [layer 0, added]
+        ExternalPoint.cs:9  →  test property ExternalPoint.X  [layer 0, added]
+        ExternalPoint.cs:11  →  test property ExternalPoint.Y  [layer 0, added]
+        ExternalWidget.cs:6–8, 15  →  test type ExternalWidget  [layer 0, added]
+        ExternalWidget.cs:9  →  test property ExternalWidget.Id  [layer 0, added]
+        ExternalWidget.cs:13–14  →  test property ExternalWidget.Internal  [layer 0, added]
+        ExternalWidget.cs:11  →  test property ExternalWidget.Name  [layer 0, added]
+        … and 30 more
+
+[01:34] STEP 6  Run the same tests on the OLD code and compare, test by test
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   7s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   5s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   5.4s
+        MessagePack.SourceGenerator.ExecutionTests        14 passed   0 failed   0 skipped   4.1s
+        MessagePack.SourceGenerator.MapModeExecutionTests    20 passed   0 failed   0 skipped   4.2s
+        MessagePack.SourceGenerator.Tests                167 passed   0 failed   0 skipped   9.8s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   8.9s
+        tests present in both: 1280  |  pass in both: 1274  |  broken by the change: 0  |  only in the new code: 13
+
+[02:18] STEP 7  Run the change's own tests against the OLD code: do they fail without the change?
+        took the old code and copied in only the 9 test file(s) of the change
+        MessagePack.SourceGenerator.ExecutionTests     DID NOT COMPILE: <home>\.aya-d\wt\32258f083afd\tests\MessagePack.SourceGenerator.ExecutionTests\GeneratedFormatterForExternalTypes.cs(9,2): error CS0246: The type or namespace name 'GeneratedMessagePackFormatterAttribute' could not be found (are you missing a using directive or an assembly reference?)
+            GeneratedFormatterForExternalTypesTests.ContractlessClassNullRoundTrips: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.ContractlessClassRoundTrips: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.ContractlessClassUsesStringKeysForPublicReadWriteMembers: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.ContractlessStructRoundTrips: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.GeneratedFormattersAreRegisteredInGeneratedResolver: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.MessagePackObjectCanContainExternalTypes: build-failed on old code  →  needs-new-code
+            GeneratedFormatterForExternalTypesTests.SurrogateControlsKeysAndMembership: build-failed on old code  →  needs-new-code
+        MessagePack.SourceGenerator.Tests                  0 passed   6 failed   0 skipped   5.8s
+            GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract: Failed on old code  →  discriminating
+            GeneratedMessagePackFormatterTests.FormatterMustBePartial: Failed on old code  →  discriminating
+            GeneratedMessagePackFormatterTests.FormatterMustImplementFormatterOfT: Failed on old code  →  discriminating
+            GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt: Failed on old code  →  discriminating
+            GeneratedMessagePackFormatterTests.SurrogateMemberMustHaveMatchingType: Failed on old code  →  discriminating
+            GeneratedMessagePackFormatterTests.SurrogateMemberMustMatchFormattedType: Failed on old code  →  discriminating
+
+[02:29] STEP 8  Attach the results to each changed unit, from the lowest layer up
+        coverage data for 456 source files
+        layer  0  Constants.GeneratedMessagePackFormatterAttributeName
+                  changed lines run 0, not run 0  |  3 units depend on it (0 of 1 measured ones run by no test)  |  92 tests can reach it  →  not-measured
+        layer  0  Constants.GeneratedMessagePackFormatterSurrogatePropertyName
+                  changed lines run 0, not run 0  |  1 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  not-measured
+        layer  0  GeneratedFormatterCollector
+                  changed lines run 0, not run 0  |  1 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  not-measured
+        layer  0  GeneratedFormatterCollector.BinaryWriteTypeFormat
+                  changed lines run 4, not run 0  |  5 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  executed
+        layer  0  GeneratedFormatterCollector.GetInstanceMembers(INamedTypeSymbol)
+                  changed lines run 19, not run 2 (263–264)  |  4 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer  0  GeneratedFormatterCollector.GetMemberType(ISymbol)
+                  changed lines run 4, not run 2 (289–290)  |  5 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer  0  GeneratedFormatterCollector.IsPartial(INamedTypeSymbol, CancellationToken)
+                  changed lines run 6, not run 0  |  2 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  executed
+        layer  0  GeneratedFormatterCollector.IsPublicReadWrite(ISymbol)
+                  changed lines run 6, not run 2 (282–283)  |  4 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer  0  GeneratedFormatterRequest
+                  changed lines run 1, not run 0  |  1 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  executed
+        layer  0  GeneratedMessagePackFormatterAttribute
+                  changed lines run 0, not run 0  |  0 units depend on it (0 of 0 measured ones run by no test)  |  1 tests can reach it  →  not-measured
+        layer  0  GeneratedMessagePackFormatterAttribute.SurrogateType
+                  changed lines run 0, not run 1 (176)  |  0 units depend on it (0 of 0 measured ones run by no test)  |  1 tests can reach it  →  not-executed
+        layer  0  MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupportedId
+                  changed lines run 0, not run 0  |  34 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  not-measured
+        layer  0  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartialId
+                  changed lines run 0, not run 0  |  34 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  not-measured
+        layer  0  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormatterId
+                  changed lines run 0, not run 0  |  34 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  not-measured
+        layer  0  MsgPack00xMessagePackAnalyzer.SurrogateMemberNotFoundId
+                  changed lines run 0, not run 0  |  34 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  not-measured
+        layer  0  ObjectSerializationInfo.IsUserDeclaredFormatter
+                  changed lines run 1, not run 0  |  58 units depend on it (1 of 46 measured ones run by no test)  |  138 tests can reach it  →  executed
+        layer  1  MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupported
+                  changed lines run 8, not run 0  |  33 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  executed
+        layer  1  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartial
+                  changed lines run 8, not run 0  |  33 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  executed
+        layer  1  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormatter
+                  changed lines run 8, not run 0  |  33 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  executed
+        layer  1  MsgPack00xMessagePackAnalyzer.SurrogateMemberNotFound
+                  changed lines run 8, not run 0  |  33 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  executed
+        layer  2  MsgPack00xMessagePackAnalyzer.SupportedDiagnostics
+                  changed lines run 5, not run 0  |  32 units depend on it (0 of 28 measured ones run by no test)  |  136 tests can reach it  →  executed
+        layer  6  GeneratedFormatterCollector.CreateMember(ISymbol, int, string)
+                  changed lines run 26, not run 2 (223–224)  |  4 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer  7  GeneratedFormatterCollector.CreateContractlessMembers(INamedTypeSymbol)
+                  changed lines run 0, not run 9 (132–138, 140–141)  |  2 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  not-executed
+        layer  8  ObjectSerializationInfo.Equals(ObjectSerializationInfo?)
+                  changed lines run 0, not run 1 (168)  |  57 units depend on it (1 of 46 measured ones run by no test)  |  138 tests can reach it  →  not-executed
+        layer 13  FormatterTemplate.TransformText()
+                  changed lines run 3, not run 0  |  3 units depend on it (0 of 1 measured ones run by no test)  |  90 tests can reach it  →  executed
+        layer 13  StringKeyFormatterTemplate.TransformText()
+                  changed lines run 3, not run 0  |  3 units depend on it (0 of 1 measured ones run by no test)  |  90 tests can reach it  →  executed
+        layer 14  GeneratedFormatterCollector.CreateSurrogateMembers(INamedTypeSymbol, INamedTypeSymbol, ReferenceSymbols, Action<Diagnostic>?, Location, out bool)
+                  changed lines run 34, not run 14 (165–166, 172–178, 201–203, 211–212)  |  2 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer 14  GeneratorUtilities.GetAnalyzerOption(IncrementalGeneratorInitializationContext)
+                  changed lines run 3, not run 0  |  2 units depend on it (0 of 1 measured ones run by no test)  |  92 tests can reach it  →  executed
+        layer 15  GeneratedFormatterCollector.Collect(Compilation, AnalyzerOptions, ReferenceSymbols, Action<Diagnostic>?, INamedTypeSymbol, INamedTypeSymbol?, CancellationToken)
+                  changed lines run 38, not run 29 (78–80, 85, 90–93, 104–119, 121–125)  |  1 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+        layer 16  MessagePackGenerator.Initialize(IncrementalGeneratorInitializationContext)
+                  changed lines run 26, not run 3 (73–75)  |  0 units depend on it (0 of 0 measured ones run by no test)  |  90 tests can reach it  →  partly-executed
+
+[02:29] STEP 9  Break each changed line on purpose and see whether any test notices (mutation testing)
+        191 possible breaks on 95 changed lines; running 60; 51 are on lines no test executes
+        M1   GeneratedFormatterCollector.cs:47    !x → x                   CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 5 more   10.9s
+                 !IsPartial(formatter, cancellationToken)
+        M69  GeneratedFormatterCollector.cs:155   statement removed        does not compile, discarded   2.6s
+                 isIntKey = false;
+        M106 GeneratedFormatterCollector.cs:219   is X → is not X          NOT NOTICED by any test   12s
+                 target is IPropertySymbol { SetMethod.IsInitOnly: true }
+        M114 GeneratedFormatterCollector.cs:253   && → ||                  CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   9.5s
+                 current is not null && current.SpecialType != SpecialType.System_Object
+        M133 GeneratedFormatterCollector.cs:277   => x → => default        CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt   10.7s
+                 member switch { IPropertySymbol property => property.DeclaredAccessibility == Accessibility.Public && property…
+        M153 GeneratedFormatterCollector.cs:286   => x → => default        CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 1 more   9.9s
+                 member switch { IPropertySymbol property => property.Type, IFieldSymbol field => field.Type, _ => throw new Ar…
+        M154 GeneratedFormatterCollector.cs:295   return x → return default CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 4 more   12.6s
+                 symbol.DeclaringSyntaxReferences .Select(r => r.GetSyntax(cancellationToken)) .OfType<ClassDeclarationSyntax>(…
+        M155 MsgPack00xMessagePackAnalyzer.cs:324   true → false             NOT NOTICED by any test   13.2s
+                 true
+        M157 MsgPack00xMessagePackAnalyzer.cs:333   true → false             NOT NOTICED by any test   12.8s
+                 true
+        M159 MsgPack00xMessagePackAnalyzer.cs:342   true → false             NOT NOTICED by any test   10.7s
+                 true
+        M161 MsgPack00xMessagePackAnalyzer.cs:351   true → false             NOT NOTICED by any test   11.8s
+                 true
+        M167 FormatterTemplate.cs:33    statement removed        CAUGHT by GenerationTests.AdditionalAllowTypes and 53 more   9.6s
+                 this.Write("\t");
+        M172 StringKeyFormatterTemplate.cs:37    statement removed        CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 20 more   9.7s
+                 this.Write("\t");
+        M177 GeneratorUtilities.cs:38    && → ||                  does not compile, discarded   2.5s
+                 ctxt.SemanticModel.GetDeclaredSymbol(ctxt.Node, ct) is INamedTypeSymbol symbol && !symbol.GetAttributes().Any(…
+        M182 MessagePackGenerator.cs:34    0 → 1                    CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 5 more   11.1s
+                 0
+        M2   GeneratedFormatterCollector.cs:49    statement removed        CAUGHT by GeneratedMessagePackFormatterTests.FormatterMustBePartial   12.5s
+                 reportDiagnostic?.Invoke(Diagnostic.Create(MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartial, loca…
+        M71  GeneratedFormatterCollector.cs:164   if (c) → if (!c)         CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.1s
+                 attributes.Any(a => SymbolEqualityComparer.Default.Equals(a.AttributeClass, referenceSymbols.IgnoreAttribute))
+        M109 GeneratedFormatterCollector.cs:227   return x → return default NOT NOTICED by any test   13.5s
+                 new MemberSerializationInfo( IsProperty: isProperty, IsWritable: true, IsReadable: true, IsInitOnly: isInitOnl…
+        M119 GeneratedFormatterCollector.cs:257   || → &&                  CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.2s
+                 member.IsStatic || member.IsImplicitlyDeclared || member is not (IPropertySymbol or IFieldSymbol)
+        M134 GeneratedFormatterCollector.cs:281   && → ||                  NOT NOTICED by any test   11.9s
+                 property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…
+        M156 MsgPack00xMessagePackAnalyzer.cs:325   call passed as argument → default NOT NOTICED by any test   12.5s
+                 AnalyzerUtilities.GetHelpLink(GeneratedFormatterMustBePartialId)
+        M158 MsgPack00xMessagePackAnalyzer.cs:334   call passed as argument → default NOT NOTICED by any test   12.7s
+                 AnalyzerUtilities.GetHelpLink(GeneratedFormatterMustImplementFormatterId)
+        M160 MsgPack00xMessagePackAnalyzer.cs:343   call passed as argument → default NOT NOTICED by any test   10.2s
+                 AnalyzerUtilities.GetHelpLink(GeneratedFormatterDataTypeNotSupportedId)
+        M162 MsgPack00xMessagePackAnalyzer.cs:352   call passed as argument → default NOT NOTICED by any test   12.7s
+                 AnalyzerUtilities.GetHelpLink(SurrogateMemberNotFoundId)
+        M168 FormatterTemplate.cs:34    statement removed        CAUGHT by GenerationTests.AdditionalAllowTypes and 53 more   9.9s
+                 this.Write(this.ToStringHelper.ToStringWithCulture(Info.IsUserDeclaredFormatter ? "partial class" : "internal …
+        M173 StringKeyFormatterTemplate.cs:38    statement removed        CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 20 more   12.1s
+                 this.Write(this.ToStringHelper.ToStringWithCulture(Info.IsUserDeclaredFormatter ? "partial class" : "internal …
+        M178 GeneratorUtilities.cs:38    a && b → a               CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 4 more   14.1s
+                 ctxt.SemanticModel.GetDeclaredSymbol(ctxt.Node, ct) is INamedTypeSymbol symbol && !symbol.GetAttributes().Any(…
+        M184 MessagePackGenerator.cs:37    call passed as argument → default does not compile, discarded   2.8s
+                 unionTypes.Collect()
+        M4   GeneratedFormatterCollector.cs:55    && → ||                  NOT NOTICED by any test   10.7s
+                 i.IsGenericType && SymbolEqualityComparer.Default.Equals(i.OriginalDefinition, openFormatterInterface)
+        M73  GeneratedFormatterCollector.cs:170   is X → is not X          CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   12.1s
+                 keyAttribute is { ConstructorArguments.Length: 1 }
+        M110 GeneratedFormatterCollector.cs:229   true → false             NOT NOTICED by any test   10.8s
+                 true
+        M126 GeneratedFormatterCollector.cs:259   continue removed         CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.5s
+                 continue;
+        M137 GeneratedFormatterCollector.cs:280   && → ||                  NOT NOTICED by any test   10.8s
+                 property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…
+        M171 FormatterTemplate.cs:35    statement removed        CAUGHT by GenerationTests.AdditionalAllowTypes and 53 more   11.6s
+                 this.Write(" ");
+        M176 StringKeyFormatterTemplate.cs:39    statement removed        CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 20 more   10.4s
+                 this.Write(" ");
+        M179 GeneratorUtilities.cs:38    a && b → b               does not compile, discarded   3s
+                 ctxt.SemanticModel.GetDeclaredSymbol(ctxt.Node, ct) is INamedTypeSymbol symbol && !symbol.GetAttributes().Any(…
+        M186 MessagePackGenerator.cs:72    is X → is not X          does not compile, discarded   2.7s
+                 GeneratedFormatterCollector.Collect(s.Left.Right, options, referenceSymbols, reportDiagnostic: null, request.F…
+        M7   GeneratedFormatterCollector.cs:57    != → ==                  CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 4 more   12.1s
+                 formatterInterfaces.Length != 1
+        M76  GeneratedFormatterCollector.cs:171   is not X → is X          CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   10s
+                 key is not (int or string)
+        M111 GeneratedFormatterCollector.cs:230   true → false             NOT NOTICED by any test   11.8s
+                 true
+        M127 GeneratedFormatterCollector.cs:262   is X → is not X          CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.8s
+                 member is IPropertySymbol { IsIndexer: true }
+        M140 GeneratedFormatterCollector.cs:279   == → !=                  CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt   10.8s
+                 property.DeclaredAccessibility == Accessibility.Public
+        M169 FormatterTemplate.cs:34    call passed as argument → default CAUGHT by GenerationTests.AdditionalAllowTypes and 53 more   9.7s
+                 this.ToStringHelper.ToStringWithCulture(Info.IsUserDeclaredFormatter ? "partial class" : "internal sealed clas…
+        M174 StringKeyFormatterTemplate.cs:38    call passed as argument → default CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 20 more   10.1s
+                 this.ToStringHelper.ToStringWithCulture(Info.IsUserDeclaredFormatter ? "partial class" : "internal sealed clas…
+        M180 GeneratorUtilities.cs:38    !x → x                   CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 14 more   12.2s
+                 !symbol.GetAttributes().Any(a => a.AttributeClass?.ToDisplayString() == $"{AttributeNamespace}.{GeneratedMessa…
+        M188 MessagePackGenerator.cs:123   if (c) → if (!c)         CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 5 more   10.1s
+                 ReferenceSymbols.TryCreate(s.Left.Right, out ReferenceSymbols? referenceSymbols)
+        M9   GeneratedFormatterCollector.cs:59    statement removed        CAUGHT by GeneratedMessagePackFormatterTests.FormatterMustImplementFormatterOfT   10s
+                 reportDiagnostic?.Invoke(Diagnostic.Create(MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormat…
+        M79  GeneratedFormatterCollector.cs:182   statement removed        CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.1s
+                 keyKindIsInt ??= memberIsIntKey;
+        M112 GeneratedFormatterCollector.cs:236   call passed as argument → default NOT NOTICED by any test   12.2s
+                 memberType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+        M130 GeneratedFormatterCollector.cs:267   if (c) → if (!c)         CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   9.3s
+                 seen.Add(member.Name)
+        M135 GeneratedFormatterCollector.cs:281   a && b → a               NOT NOTICED by any test   10s
+                 property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…
+        M170 FormatterTemplate.cs:34    c ? a : b → !c ? a : b   CAUGHT by GenerationTests.AdditionalAllowTypes and 53 more   10.8s
+                 Info.IsUserDeclaredFormatter
+        M175 StringKeyFormatterTemplate.cs:38    c ? a : b → !c ? a : b   CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 20 more   10.6s
+                 Info.IsUserDeclaredFormatter
+        M181 GeneratorUtilities.cs:38    == → !=                  CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 4 more   10.5s
+                 a.AttributeClass?.ToDisplayString() == $"{AttributeNamespace}.{GeneratedMessagePackFormatterAttributeName}"
+        M189 MessagePackGenerator.cs:125   statement removed        CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 5 more   11.6s
+                 GeneratedFormatterCollector.Collect(s.Left.Right, s.Right, referenceSymbols, diagnostics.Add, s.Left.Left.Form…
+        M11  GeneratedFormatterCollector.cs:63    0 → 1                    CAUGHT by GeneratedMessagePackFormatterTests.FormattedTypeMustNotBeAbstract and 3 more   9.9s
+                 0
+        M80  GeneratedFormatterCollector.cs:183   != → ==                  CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   11.2s
+                 keyKindIsInt != memberIsIntKey
+        M113 GeneratedFormatterCollector.cs:237   call passed as argument → default NOT NOTICED by any test   10.8s
+                 memberType.ToDisplayString(BinaryWriteTypeFormat)
+        M131 GeneratedFormatterCollector.cs:269   statement removed        CAUGHT by GeneratedMessagePackFormatterTests.SurrogateKeysMustNotMixStringAndInt and 2 more   10.8s
+                 result.Add(member);
+        M138 GeneratedFormatterCollector.cs:280   a && b → a               NOT NOTICED by any test   9.6s
+                 property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…
+
+[12:57] STEP 10  Undo the change one part at a time and see whether any test needs that part
+        the change has 17 part(s) with executable lines; undoing 8 of them, one at a time
+        V1   Attributes.cs:142–177  NO TEST NEEDS IT: with the old lines back every test still passes   0.0s
+        V2   MsgPack00xMessagePackAnalyzer.cs:318–353  does not compile without the rest of the change   2.7s
+        V3   GeneratedFormatterCollector.cs:1–300  does not compile without the rest of the change   2.7s
+        V4   GeneratedFormatterRequest.cs:1–13  does not compile without the rest of the change   2.7s
+        V5   ObjectSerializationInfo.cs:13–18  does not compile without the rest of the change   2.7s
+        V6   GeneratorUtilities.cs:35–36  NO TEST NEEDS IT: with the old lines back every test still passes   10.2s
+        V7   MessagePackGenerator.cs:29–35  does not compile without the rest of the change   2.7s
+        V8   FormatterTemplate.cs:33–35  NO TEST NEEDS IT: with the old lines back every test still passes   12.0s
+
+[13:32] STEP 11  Run the same inputs through the OLD and the NEW code and see where the results differ
+        6 unit(s) already existed and were modified; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for a probe for 6. 24 unit(s) are new: there is no old version to compare them with
+        round 1: 6 session(s) at the same time, answered in 49s
+              P1  ObjectSerializationInfo.Equals(ObjectSerializationInfo?): rejected-compile — It does not compile on the new code.
+              P2  MsgPack00xMessagePackAnalyzer.SupportedDiagnostics: compared — 6 of 12 case(s) differ: 6 changed
+              P3  FormatterTemplate.TransformText(): rejected-no-effect — The probe runs, but it executed none of the lines it is about (33–35 of src/MessagePack.SourceGenerator/Transforms/FormatterTemplate.cs). Its cases must reach that code.
+              P4  StringKeyFormatterTemplate.TransformText(): compared — 10 case(s) give the same result on the old and the new code
+              P5  GeneratorUtilities.GetAnalyzerOption(IncrementalGeneratorInitializationContext): compared — 10 case(s) give the same result on the old and the new code
+              P6  MessagePackGenerator.Initialize(IncrementalGeneratorInitializationContext): compared — 12 case(s) give the same result on the old and the new code
+        round 2: 2 session(s) at the same time, answered in 47s
+              P1  ObjectSerializationInfo.Equals(ObjectSerializationInfo?): compared — 11 case(s) give the same result on the old and the new code
+              P3  FormatterTemplate.TransformText(): rejected-no-effect — The probe runs, but it executed none of the lines it is about (33–35 of src/MessagePack.SourceGenerator/Transforms/FormatterTemplate.cs). Its cases must reach that code.
+        round 3: 1 session(s) at the same time, answered in 60s
+              P3  FormatterTemplate.TransformText(): compared — 11 case(s) give the same result on the old and the new code
+
+[18:17] STEP 12  Sweep: run inputs nobody chose (the existing tests' own, and altered with what the change adds) through the OLD and the NEW code
+        151 input(s) found in the tests of tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj; 151 taken as they are and 2391 altered mechanically:
+          58 × the types other types use moved to a referenced library
+         151 × every type nested in an outer class
+          30 × an attribute argument made to repeat its sibling's
+          30 × an attribute argument changed to the other kind of literal
+          30 × an attribute argument made null
+          31 × the attributes removed from every type another type uses
+         131 × every attribute removed from every type
+          91 × every attribute removed from every member
+          11 × `partial` removed wherever it appears
+           2 × `sealed` removed wherever it appears
+        … and 24 more
+        round 1: 1 session(s) at the same time, answered in 43s
+              S1  the change as a whole, over 2542 inputs built from the existing tests: compared — 2542 case(s) give the same result on the old and the new code
+        the inputs drove 58 of the change's 276 executable line(s); 2542 of 2542 give the same result on old and new code, 0 differ
+        on 40 input(s) the code under test crashes on the old and on the new code alike (for example i032+a3 GenerationTests.cs:785 + an attribute argument made to repeat its sibling's)
+        9 input(s) that came with the change (1 as they are) were run on the new code alone: 0 make the code under test crash, 0 get output that does not compile with no error reported
+
+[20:32] STEP 13  Ask a model for tests that fill the gaps, and check every one before believing it
+        29 gap(s): 10 stretch(es) of unexecuted code, 19 unnoticed break(s); asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for 8
+        R1  never executed: GeneratedFormatterCollector.GetInstanceMembers(INamedTypeSymbol), line(s) 263–264
+        R2  unnoticed break: GeneratedFormatterCollector.IsPublicReadWrite(ISymbol), line(s) 281  [&& → || in `property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…`]
+        R3  never executed: GeneratedFormatterCollector.GetMemberType(ISymbol), line(s) 289–290
+        R4  unnoticed break: GeneratedFormatterCollector.IsPublicReadWrite(ISymbol), line(s) 281  [a && b → a in `property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…`]
+        R5  never executed: GeneratedFormatterCollector.IsPublicReadWrite(ISymbol), line(s) 282–283
+        R6  unnoticed break: GeneratedFormatterCollector.IsPublicReadWrite(ISymbol), line(s) 280  [&& → || in `property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…`]
+        R7  never executed: GeneratedMessagePackFormatterAttribute.SurrogateType, line(s) 176
+        R8  unnoticed break: GeneratedFormatterCollector.IsPublicReadWrite(ISymbol), line(s) 280  [a && b → a in `property.DeclaredAccessibility == Accessibility.Public && property.GetMethod is { DeclaredAccessibility: Acces…`]
+        round 1: 8 session(s) at the same time, answered in 29s
+              R1: accepted — passes and executes line(s) 263–264
+              R2: accepted — passes on the code as it is and fails when the line is altered
+              R3: accepted — passes and executes line(s) 289; still not executed: 290
+              R4: accepted — passes on the code as it is and fails when the line is altered
+              R5: fails-on-current-code — AyaR5Tests.SurrogateRejectsReadOnlyAndConstFieldsOnFormattedType fails on the code as it is:
+              R6: accepted — passes on the code as it is and fails when the line is altered
+              R7: accepted — passes and executes line(s) 176
+              R8: accepted — passes on the code as it is and fails when the line is altered
+        round 2: 1 session(s) at the same time, answered in 14s
+              R5: accepted — passes and executes line(s) 282; still not executed: 283
+
+[22:40] STEP 14  Ask a model to break the units at the top of the list; the old code decides who is right
+        12 unit(s) attacked at the same time, one session of gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) each
+        round 1: 12 session(s) wrote in 58s; built and run on new and old code in 27s
+              A1  MsgPack00xMessagePackAnalyzer.SupportedDiagnostics: fails-on-both — 2 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 2 other(s) pass
+              A2  ObjectSerializationInfo.Equals(ObjectSerializationInfo?): resisted — 4 test(s) written to break it pass on the new code
+              A3  FormatterTemplate.TransformText(): fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A4  GeneratorUtilities.GetAnalyzerOption(IncrementalGeneratorInitializationContext): fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A5  ObjectSerializationInfo.IsUserDeclaredFormatter: fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 1 other(s) pass
+              A6  GeneratedFormatterCollector.BinaryWriteTypeFormat: fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A7  StringKeyFormatterTemplate.TransformText(): fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A8  GeneratedFormatterCollector.CreateContractlessMembers(INamedTypeSymbol): possible-defect — 5 test(s) fail on the new code and the old code cannot judge them (they need code the change added): AyaA8Attack.Contractless_RequiredProperty_CompilesCleanly, AyaA8Attack.Contractless_IndexerIsIgnored_CompilesCleanly, AyaA8Attack.Contractless_StructWithMixedMembers_CompilesCleanly, AyaA8Attack.Contractless_InitOnlyProperty_CompilesCleanly, AyaA8Attack.Contractless_OverriddenAndShadowedBaseMembers_CompilesCleanly
+              A9  GeneratedFormatterRequest: fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A10  GeneratedMessagePackFormatterAttribute.SurrogateType: resisted — 5 test(s) written to break it pass on the new code
+              A11  MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupported: resisted — 5 test(s) written to break it pass on the new code
+              A12  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartial: possible-defect — 1 test(s) fail on the new code and the old code cannot judge them (they need code the change added): AyaA12Attack.GeneratedFormatterMustBePartial_IsInSupportedDiagnosticsWithoutDuplicateIds
+        1 test(s) kept from earlier runs because they showed a regression are run again
+              K1  GeneratedFormatterRequest: regression-demonstrated — 1 test(s) fail on the new code and pass on the old code: AyaK1Attack.SurrogateTypeArrayDoesNotCrashOrFallbackToContractless
+
+[24:17] STEP 15  Exhaustive: probe the older code that depends on the change and that no original test executes
+        1 member(s) depend on the change and are executed by no original test
+        each needs one to 3 model sessions; the budget is 12 session(s), nearest to the change first
+
+[24:17] STEP 16  Judge: ask a model whether each difference the change's own text does not explain was meant (an opinion, shown as one)
+        5 group(s) of differences are not explained by the change's own text; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) whether each was meant, one session per comparison
+              P2  MsgPack00xMessagePackAnalyzer.SupportedDiagnostics: 5 intended
+        the model reads 5 thing(s) in the requirement: 3 not-demonstrated, 2 not-addressed
+        model sessions opened in this run: 33
+        working copies found altered by an earlier run and put back to their commit: 32258f083afd
+
+[24:50] STEP 17  Turn the results into evidence and an ordered list of where to look, and write the report
+        E1   INFO  28 changed files fall into 27 groups of similar edits; the largest has 2 files in 1 exact variant(s)
+        E2   INFO  30 non-test symbols changed across layers 0–16; the most depended-on has 58 dependent member(s); 17 public API symbols touched
+        E3   INFO  Old and new code were both built with .NET SDK 9.0.321, not the 8.0.428 the repository selects, because its source generator needs a newer compiler
+        E4   PASS  7 test project(s) and their dependencies compile with the change
+        E5   PASS  1274 of 1280 pre-existing tests pass on both old and new code; 0 regressed
+        E6   WARN  44 of those tests are fed random data, so their inputs differ on every run; they were compared per test method, not input by input
+        E7   PASS  13 new and 0 modified tests; 13 pass on the new code, 0 fail
+        E8   WARN  6 of 13 of those tests fail on the old code (they demonstrate the change); 0 pass without it; 7 cannot compile without it
+        E9   WARN  211 of 276 changed executable source lines were executed by the test suite; 65 were never executed
+        E10  WARN  36 of 55 deliberate breaks of changed lines were caught by a test; 19 went unnoticed; 51 more are on lines no test executes; 80 were not tried (budget)
+        E11  WARN  8 part(s) of the change were put back as they were, one at a time: 0 are needed by at least one test, 3 can be undone with every test still passing, 5 do not compile without the rest of the change
+        E12  INFO  8 of 8 tests written by gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) were accepted: they compile, pass, and now execute 5 previously unexecuted line(s) and catch 4 of the 19 unnoticed break(s); 21 gap(s) were not asked for (budget)
+        E13  WARN  6 of 6 modified unit(s) were run on the old and the new code with the same 66 input(s): 60 give the same result, 6 differ (6 changed)
+        E14  WARN  12 unit(s) were attacked with tests written to break them: 3 resisted (14 tests), 0 with a demonstrated regression, 2 with a failing test nothing can arbitrate, 7 failing on the old code too. 1 test(s) kept from earlier runs because they showed a regression were run again: 0 still fail on the new code and pass on the old
+        E15  WARN  2542 input(s) nobody chose (151 taken from the existing tests, 2391 altered mechanically) were run on the old and the new code: 2542 give the same result, 0 differ. The inputs drove 58 of the change's 276 executable line(s), less than half: what they do not reach, they say nothing about. 9 input(s) that came with the change were run on the new code alone: 0 make the code under test crash, 0 get output that does not compile with no error reported. on 40 input(s) the code under test crashes on the old and on the new code alike (for example i032+a3 GenerationTests.cs:785 + an attribute argument made to repeat its sibling's)
+        E16  INFO  OPINION, not a measurement. gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) was asked whether 5 group(s) of differences the change's own text does not explain were meant: it reads 5 as what the change set out to do, 0 as not meant, 0 as artefacts of the build or the run and 0 as unclear
+        E17  WARN  OPINION, bounded by measurements. A model read 5 thing(s) the requirement asks for: 0 are shown by a test that fails without the change, 3 the change appears to do with no such test, 2 it does not address
+        E18  INFO  1 member(s) depend on the change and are run by no original test; 0 were probed within a budget of 12 session(s) and 0 could be compared on old and new code
+        not checked: 32 item(s)  |  refused to decide: 3 item(s)
+        where to look, most deserving first:
+          1. tier 2  MsgPack00xMessagePackAnalyzer.SupportedDiagnostics  —  6 input(s) give a different result than on the old code, and the change's own text does not explain it
+          2. tier 3  ObjectSerializationInfo.Equals(ObjectSerializationInfo?)  —  it modifies code that existed, 57 member(s) depend on it, and a mistake in it would go unnoticed
+          3. tier 3  FormatterTemplate.TransformText()  —  it modifies code that existed, 3 member(s) depend on it, and a mistake in it would go unnoticed
+          4. tier 3  GeneratorUtilities.GetAnalyzerOption(IncrementalGeneratorInitializationContext)  —  it modifies code that existed, 2 member(s) depend on it, and a mistake in it would go unnoticed
+          5. tier 4  The requirement: 5 of the 5 thing(s) it asks for are not shown by any test  —  a model reads "Allow the generator and analyzers to work with user-defined versions of the MessagePack attributes." as not addressed: The change uses contractless mode or a SurrogateType in the consuming assembly instead of recognizing user-defined copies of MessagePack attributes. (its opinion)
+          6. tier 4  ObjectSerializationInfo.IsUserDeclaredFormatter  —  none of its changed lines can be broken by the alterations AYA knows
+          7. tier 4  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustBePartial  —  a test written to break it fails on the new code, and the old code cannot say who is wrong (attacks/A12.cs)
+          8. tier 4  GeneratedFormatterCollector.BinaryWriteTypeFormat  —  none of its changed lines can be broken by the alterations AYA knows
+          9. tier 4  StringKeyFormatterTemplate.TransformText()  —  the analysis cannot see all of it: it is generated code: what produces it was not re-run, and the graph does not link it to its generator
+         10. tier 4  GeneratedFormatterCollector.CreateContractlessMembers(INamedTypeSymbol)  —  no break of its lines was tried (budget, or no test executes them)
+         11. tier 4  GeneratedFormatterRequest  —  none of its changed lines can be broken by the alterations AYA knows
+         12. tier 4  GeneratedMessagePackFormatterAttribute.SurrogateType  —  none of its changed lines can be broken by the alterations AYA knows
+         13. tier 4  src/MessagePack.SourceGenerator/Transforms/FormatterTemplate.tt  —  a template that generates code: it was not re-run to confirm the committed output is what it produces
+         14. tier 4  src/MessagePack.SourceGenerator/Transforms/StringKey/StringKeyFormatterTemplate.tt  —  a template that generates code: it was not re-run to confirm the committed output is what it produces
+         15. tier 4  tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj  —  build configuration: it can change how everything compiles, and no check here covers it
+         16. tier 4  tests/MessagePack.SourceGenerator.ExternalTypes/MessagePack.SourceGenerator.ExternalTypes.csproj  —  build configuration: it can change how everything compiles, and no check here covers it
+         17. tier 4  tests/MessagePack.SourceGenerator.MapModeExecutionTests/MessagePack.SourceGenerator.MapModeExecutionTests.csproj  —  build configuration: it can change how everything compiles, and no check here covers it
+         18. tier 5  MsgPack00xMessagePackAnalyzer.GeneratedFormatterDataTypeNotSupported  —  a mistake in it would go unnoticed, and nothing else was found against it
+         19. tier 5  MsgPack00xMessagePackAnalyzer.GeneratedFormatterMustImplementFormatter  —  a mistake in it would go unnoticed, and nothing else was found against it
+         20. tier 5  MsgPack00xMessagePackAnalyzer.SurrogateMemberNotFound  —  a mistake in it would go unnoticed, and nothing else was found against it
+         21. tier 5  GeneratedFormatterCollector.GetMemberType(ISymbol)  —  a mistake in it would go unnoticed, and nothing else was found against it
+         22. tier 5  GeneratedFormatterCollector.CreateMember(ISymbol, int, string)  —  a mistake in it would go unnoticed, and nothing else was found against it
+         23. tier 5  GeneratedFormatterCollector.GetInstanceMembers(INamedTypeSymbol)  —  a mistake in it would go unnoticed, and nothing else was found against it
+         24. tier 5  GeneratedFormatterCollector.IsPublicReadWrite(ISymbol)  —  a mistake in it would go unnoticed, and nothing else was found against it
+         25. tier 5  GeneratedFormatterCollector.CreateSurrogateMembers(INamedTypeSymbol, INamedTypeSymbol, ReferenceSymbols, Action<Diagnostic>?, Location, out bool)  —  a mistake in it would go unnoticed, and nothing else was found against it
+        … and 21 more
+        wrote report.md, evidence.json, graph.json and pipeline.log to <aya>\aya-out\ju26-issue-2129

@@ -114,47 +114,62 @@ public sealed class TestWriter(ModelSession session)
         foreach (var t in attemptable)
         {
             w.Trace.Info($"{t.Request}  {(t.Reason == "never-executed" ? "never executed" : "unnoticed break")}: {t.Symbol}, line(s) {ReviewCommand.Ranges(t.Lines)}" + (t.Break is null ? string.Empty : $"  [{t.Break}]"));
-            if (ClosedByAnother(t))
+        }
+
+        // Written in rounds. In each one every open gap gets a session of its own, all at the same time; the
+        // answers are then built, run and measured one by one, and what was rejected goes into the next round
+        // with what happened to it.
+        var prompts = attemptable.ToDictionary(t => t.Request, t => t.Prompt);
+        var latest = new Dictionary<string, string>(StringComparer.Ordinal);
+        var pending = attemptable.ToList();
+        for (var round = 1; round <= MaxAttempts && pending.Count > 0; round++)
+        {
+            // A break that an already accepted test catches needs no session.
+            pending = pending.Where(t => !ClosedByAnother(t)).ToList();
+            if (pending.Count == 0)
             {
-                continue;
+                break;
             }
 
-            var prompt = t.Prompt;
-            string? code = null;
-            for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var answers = session.AskAll(pending.Select(t => prompts[t.Request]).ToList());
+            w.Trace.Info($"round {round}: {pending.Count} session(s) at the same time, answered in {clock.Elapsed.TotalSeconds:0}s");
+            for (var i = 0; i < pending.Count; i++)
             {
-                code = session.AskForCode(prompt, out var error);
-                t.Attempts = attempt;
+                var t = pending[i];
+                var (code, error) = answers[i];
+                t.Attempts = round;
                 if (code is null)
                 {
                     (t.Status, t.Detail) = ("writer-failed", error);
-                    w.Trace.Info($"      try {attempt}: the model gave no usable answer — {error}");
-                    break;
+                    w.Trace.Info($"      {t.Request}: the model gave no usable answer — {error}");
+                    continue;
                 }
 
-                (t.Status, t.Detail, t.CoversLines, t.Tests) = this.Check(w, t, code, attempt, mutantTexts);
-                w.Trace.Info($"      try {attempt}: {t.Status} — {t.Detail.Split('\n')[0]}");
-                if (t.Status == "accepted")
-                {
-                    break;
-                }
-
-                prompt = t.Prompt +
-                    "\n\n## Your previous attempt\n```csharp\n" + code.Trim() + "\n```\n\n" +
-                    "## What happened when it was built and run\n" + t.Detail + "\n\n" +
-                    "Fix it. Reply with the whole corrected file in a single csharp code block and nothing else.";
-            }
-
-            if (code is not null)
-            {
-                var name = t.Status == "accepted" ? t.Request + ".cs" : t.Request + ".rejected.cs";
-                File.WriteAllText(Path.Combine(proposedDir, name), code);
-                t.TestFile = "proposed-tests/" + name;
+                latest[t.Request] = code;
+                (t.Status, t.Detail, t.CoversLines, t.Tests) = this.Check(w, t, code, round, mutantTexts);
+                w.Trace.Info($"      {t.Request}: {t.Status} — {t.Detail.Split('\n')[0]}");
                 if (t.Status == "accepted")
                 {
                     accepted.Add((t, code));
                 }
+                else
+                {
+                    prompts[t.Request] = t.Prompt +
+                        "\n\n## Your previous attempt\n```csharp\n" + code.Trim() + "\n```\n\n" +
+                        "## What happened when it was built and run\n" + t.Detail + "\n\n" +
+                        "Fix it. Reply with the whole corrected file in a single csharp code block and nothing else.";
+                }
             }
+
+            pending = pending.Where(t => t.Status is not ("accepted" or "writer-failed")).ToList();
+        }
+
+        foreach (var t in attemptable.Where(t => latest.ContainsKey(t.Request)))
+        {
+            var name = t.Status == "accepted" ? t.Request + ".cs" : t.Request + ".rejected.cs";
+            File.WriteAllText(Path.Combine(proposedDir, name), latest[t.Request]);
+            t.TestFile = "proposed-tests/" + name;
         }
 
         // Breaks whose own test was rejected before a later test was accepted.
@@ -197,16 +212,16 @@ public sealed class TestWriter(ModelSession session)
             requests.Add(request);
         }
 
-        foreach (var c in changed.Where(c => !c.IsTest && c.UncoveredLines.Count > 0).OrderBy(c => c.Layer))
+        // The two kinds of gap are taken in turns, so that a budget never spends itself on one of them alone.
+        var unexecuted = changed.Where(c => !c.IsTest && c.UncoveredLines.Count > 0).OrderBy(c => c.Layer)
+            .Select(c => (Unit: c, Reason: "never-executed", Lines: c.UncoveredLines.ToList(), Break: (Mutant?)null)).ToList();
+        var unnoticed = changed.Where(c => !c.IsTest)
+            .SelectMany(c => c.Mutants.Where(m => m.Status == "survived").Select(m => (Unit: c, Reason: "unnoticed-break", Lines: new List<int> { m.Line }, Break: (Mutant?)m))).ToList();
+        for (var i = 0; i < Math.Max(unexecuted.Count, unnoticed.Count); i++)
         {
-            Add(c, "never-executed", c.UncoveredLines.ToList(), null);
-        }
-
-        foreach (var c in changed.Where(c => !c.IsTest))
-        {
-            foreach (var m in c.Mutants.Where(m => m.Status == "survived"))
+            foreach (var gap in new[] { unexecuted, unnoticed }.Where(list => i < list.Count).Select(list => list[i]))
             {
-                Add(c, "unnoticed-break", [m.Line], m);
+                Add(gap.Unit, gap.Reason, gap.Lines, gap.Break);
             }
         }
 

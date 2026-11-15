@@ -1,0 +1,216 @@
+
+[00:00] STEP 1  Read the change: which files, and what role each one plays
+        old code 32258fdb  →  new code 9df83c38 (ju26-issue-2283)
+        4 files, 228 changed lines
+        docs              2 file(s)  +10 -0
+            README.md
+            doc/analyzers/MsgPack004.md
+        source            1 file(s)  +26 -3
+            src/MessagePack.SourceGenerator/CodeAnalysis/TypeCollector.cs
+        test              1 file(s)  +189 -0
+            tests/MessagePack.SourceGenerator.Tests/GenericsFormatterTests.cs
+
+[00:00] STEP 2  Find the projects the change touches and the test projects that depend on them
+        touched directly:
+            src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        test projects that depend on them:
+            tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+            tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+            tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+            tests/MessagePack.Tests/MessagePack.Tests.csproj
+
+[00:00] STEP 3  Run the tests on the NEW code, recording which lines execute
+        .NET SDK 9.0.321 (newest installed; the repo selects 8.0.428)
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   14.8s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   9.8s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   13.7s
+        MessagePack.SourceGenerator.Tests                170 passed   0 failed   0 skipped   20.5s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   17.7s
+
+[01:17] STEP 4  Break the new code into its smallest units and link them (dependency graph)
+        loading src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+        loading tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+        loading tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+        loading tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+        loading tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        indexing 312 files in 17 projects
+        units (nodes): 6232  =  2605 method, 1126 field, 1070 type, 914 property, 517 ctor
+        links (edges): 19363  =  11084 uses, 6749 type-ref, 790 entry, 740 dispatch
+        cycles collapsed: 91 groups of units that depend on each other (largest has 195 units)
+        layers: 37  (layer 0 depends on nothing else; each layer depends only on lower ones)
+        units per layer: L0=1574  L1=674  L2=507  L3=781  L4=309  L5=141  L6=191  L7=107  …  L36=94
+        test methods found: 596
+
+[01:57] STEP 5  Locate the changed lines in the graph: which units own them
+        TypeCollector.cs:1429–1434  →  method TypeCollector.GetPropertyIdentifierLocation(IPropertySymbol)  [layer 0, added]
+        TypeCollector.cs:1436–1450  →  method TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic)  [layer 1, added]
+        TypeCollector.cs:985, 1077  →  method TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)  [layer 13, modified]
+        TypeCollector.cs:239  →  ctor TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken)  [layer 13, modified]
+        GenericsFormatterTests.cs:676–684  →  test method GenericsFormatterTests.CreateCompilation(string, string, LanguageVersion, IEnumerable<MetadataReference>, OutputKind)  [layer 0, added]
+        GenericsFormatterTests.cs:661–664, 666–671, 673–674  →  test method GenericsFormatterTests.CompileToMetadataReferenceAsync(string, string, LanguageVersion)  [layer 32, added]
+        GenericsFormatterTests.cs:628–635, 637–648, 650–659  →  test method GenericsFormatterTests.RunWithMetadataReferenceAsync(string, string, string, LanguageVersion)  [layer 34, added]
+        GenericsFormatterTests.cs:543–554, 556, 558–560, 562–564, 566, 568–573, 575–577, 579–580  →  test method GenericsFormatterTests.ClosedGenericRecordStruct_FromMetadataReference()  [layer 35, added]
+        GenericsFormatterTests.cs:499–510, 512–521, 523–524, 526–533, 535–538, 540–541  →  test method GenericsFormatterTests.ClosedGenericStruct_FromMetadataReference()  [layer 35, added]
+        GenericsFormatterTests.cs:582–593, 595–601, 603–606, 608–609, 611–618, 620–623, 625–626  →  test method GenericsFormatterTests.ClosedGenericStruct_FromMetadataReference_UnkeyedMember()  [layer 35, added]
+
+[01:57] STEP 6  Run the same tests on the OLD code and compare, test by test
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   10.6s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   6.7s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   7.8s
+        MessagePack.SourceGenerator.Tests                167 passed   0 failed   0 skipped   18.5s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   16.8s
+        tests present in both: 1246  |  pass in both: 1240  |  broken by the change: 0  |  only in the new code: 3
+
+[02:58] STEP 7  Run the change's own tests against the OLD code: do they fail without the change?
+        took the old code and copied in only the 1 test file(s) of the change
+        MessagePack.SourceGenerator.Tests                  0 passed   3 failed   0 skipped   10.2s
+            GenericsFormatterTests.ClosedGenericRecordStruct_FromMetadataReference: Failed on old code  →  discriminating
+            GenericsFormatterTests.ClosedGenericStruct_FromMetadataReference: Failed on old code  →  discriminating
+            GenericsFormatterTests.ClosedGenericStruct_FromMetadataReference_UnkeyedMember: Failed on old code  →  discriminating
+
+[03:08] STEP 8  Attach the results to each changed unit, from the lowest layer up
+        coverage data for 376 source files
+        layer  0  TypeCollector.GetPropertyIdentifierLocation(IPropertySymbol)
+                  changed lines run 1, not run 0  |  31 units depend on it (0 of 28 measured ones run by no test)  |  133 tests can reach it  →  executed
+        layer  1  TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic)
+                  changed lines run 6, not run 0  |  31 units depend on it (0 of 28 measured ones run by no test)  |  133 tests can reach it  →  executed
+        layer 13  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)
+                  changed lines run 2, not run 0  |  30 units depend on it (0 of 28 measured ones run by no test)  |  133 tests can reach it  →  executed
+        layer 13  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken)
+                  changed lines run 1, not run 0  |  30 units depend on it (0 of 28 measured ones run by no test)  |  133 tests can reach it  →  executed
+
+[03:09] STEP 9  Break each changed line on purpose and see whether any test notices (mutation testing)
+        13 possible breaks on 6 changed lines; running 13
+        M1   TypeCollector.cs:239   statement removed        CAUGHT by GenerationTests.DeserializingConstructorParameterMemberTypeAssignability_Incompatible and 35 more   19.1s
+                 this.reportDiagnostic = reportAnalyzerDiagnostic is null ? null : diagnostic => ReportIfLocatedInCompilation(r…
+        M3   TypeCollector.cs:985   statement removed        CAUGHT by MsgPack00xAnalyzerTests.NullStringKey   23.9s
+                 this.reportDiagnostic?.Invoke(Diagnostic.Create(MsgPack00xMessagePackAnalyzer.BothStringAndIntKeyAreNull, GetP…
+        M9   TypeCollector.cs:1434  => x → => default        CAUGHT by MsgPack00xAnalyzerTests.NullStringKey   16.1s
+                 (property.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax() as PropertyDeclarationSyntax)?.Identifier.Ge…
+        M10  TypeCollector.cs:1446  && → ||                  NOT NOTICED by any test   16.7s
+                 diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)
+        M2   TypeCollector.cs:239   is X → is not X          CAUGHT by GenerationTests.DeserializingConstructorParameterMemberTypeAssignability_Incompatible and 36 more   17.6s
+                 reportAnalyzerDiagnostic is null
+        M7   TypeCollector.cs:1077  call passed as argument → default CAUGHT by MsgPack00xAnalyzerTests.AddAttributeToField_WithComment and 2 more   18.9s
+                 item.DeclaringSyntaxReferences.FirstOrDefault()?.GetSyntax().GetLocation()
+        M13  TypeCollector.cs:1448  statement removed        CAUGHT by GenerationTests.DeserializingConstructorParameterMemberTypeAssignability_Incompatible and 35 more   17.4s
+                 report(diagnostic);
+        M4   TypeCollector.cs:985   call passed as argument → default CAUGHT by MsgPack00xAnalyzerTests.NullStringKey   18.3s
+                 Diagnostic.Create(MsgPack00xMessagePackAnalyzer.BothStringAndIntKeyAreNull, GetPropertyIdentifierLocation(item…
+        M11  TypeCollector.cs:1446  a && b → a               NOT NOTICED by any test   16.3s
+                 diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)
+        M8   TypeCollector.cs:1077  call passed as argument → default does not compile, discarded   4.1s
+                 formattedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+        M12  TypeCollector.cs:1446  a && b → b               NOT NOTICED by any test   19.8s
+                 diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)
+        M5   TypeCollector.cs:985   call passed as argument → default CAUGHT by MsgPack00xAnalyzerTests.NullStringKey   16.5s
+                 GetPropertyIdentifierLocation(item)
+        M6   TypeCollector.cs:985   call passed as argument → default does not compile, discarded   3.8s
+                 formattedType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat)
+
+[06:38] STEP 10  Undo the change one part at a time and see whether any test needs that part
+        the change has 4 part(s) with executable lines; undoing 4 of them, one at a time
+        V1   TypeCollector.cs:239–239  NEEDED by 1 test(s), 0 of which existed before (e.g. GenericsFormatterTests.ClosedGenericStruct_FromMetadataReference_UnkeyedMember)   15.3s
+        V2   TypeCollector.cs:985–985  NO TEST NEEDS IT: with the old lines back every test still passes   14.8s
+        V3   TypeCollector.cs:1077–1077  NEEDED by 3 test(s), 0 of which existed before (e.g. GenericsFormatterTests.ClosedGenericRecordStruct_FromMetadataReference)   14.9s
+        V4   TypeCollector.cs:1429–1451  does not compile without the rest of the change   3.6s
+
+[07:26] STEP 11  Run the same inputs through the OLD and the NEW code and see where the results differ
+        2 unit(s) already existed and were modified; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for a probe for 2. 2 unit(s) are new: there is no old version to compare them with
+        round 1: 2 session(s) at the same time, answered in 36s
+              P1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): rejected-no-effect — The probe runs, but it executed none of the lines it is about (985, 1077 of src/MessagePack.SourceGenerator/CodeAnalysis/TypeCollector.cs). Its cases must reach that code.
+              P2  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken): compared — 1 of 10 case(s) differ: 1 changed
+        round 2: 1 session(s) at the same time, answered in 39s
+              P1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): compared — 10 case(s) give the same result on the old and the new code
+
+[09:42] STEP 12  Sweep: run inputs nobody chose (the existing tests' own, and altered with what the change adds) through the OLD and the NEW code
+        151 input(s) found in the tests of tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj; 151 taken as they are and 2391 altered mechanically:
+          58 × the types other types use moved to a referenced library
+         151 × every type nested in an outer class
+          30 × an attribute argument made to repeat its sibling's
+          30 × an attribute argument changed to the other kind of literal
+          30 × an attribute argument made null
+          31 × the attributes removed from every type another type uses
+         131 × every attribute removed from every type
+          91 × every attribute removed from every member
+          11 × `partial` removed wherever it appears
+           2 × `sealed` removed wherever it appears
+        … and 24 more
+        round 1: 1 session(s) at the same time, answered in 38s
+              S1  the change as a whole, over 2542 inputs built from the existing tests: compared — 2542 case(s) give the same result on the old and the new code
+        the inputs drove 10 of the change's 10 executable line(s); 2542 of 2542 give the same result on old and new code, 0 differ
+        on 40 input(s) the code under test crashes on the old and on the new code alike (for example i032+a3 GenerationTests.cs:785 + an attribute argument made to repeat its sibling's)
+        72 input(s) that came with the change (5 as they are) were run on the new code alone: 0 make the code under test crash, 2 get output that does not compile with no error reported
+              silently-broken: n002 GenericsFormatterTests.cs:523 — ERROR-GEN CS0246: The type or namespace name 'MyGenericStruct<>' could not be found (are you missing a using directive or an assembly reference?)
+              silently-broken: n004 GenericsFormatterTests.cs:562 — ERROR-GEN CS0246: The type or namespace name 'Item<>' could not be found (are you missing a using directive or an assembly reference?)
+
+[12:29] STEP 13  Ask a model for tests that fill the gaps, and check every one before believing it
+        3 gap(s): 0 stretch(es) of unexecuted code, 3 unnoticed break(s); asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for 3
+        R1  unnoticed break: TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic), line(s) 1446  [&& → || in `diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)`]
+        R2  unnoticed break: TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic), line(s) 1446  [a && b → a in `diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)`]
+        R3  unnoticed break: TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic), line(s) 1446  [a && b → b in `diagnostic.Location.IsInSource && this.compilation.ContainsSyntaxTree(diagnostic.Location.SourceTree)`]
+        round 1: 3 session(s) at the same time, answered in 63s
+              R1: fails-on-current-code — AyaR1Tests.DiagnosticInCompilationReference_IsNotReported fails on the code as it is:
+              R2: rejected-no-effect — The tests pass on the code as it is, but they still pass when the line is altered as described.
+              R3: fails-on-current-code — AyaR3Tests.MetadataTypeWithDiagnostic_IsDroppedWithoutError fails on the code as it is:
+        round 2: 3 session(s) at the same time, answered in 102s
+              R1: fails-on-current-code — AyaR1Tests.DiagnosticInCompilationReference_IsNotReported fails on the code as it is:
+              R2: fails-on-current-code — AyaR2Tests.DiagnosticOnClosedGenericInCompilationReference_IsNotReportedInReferencingCompilation fails on the code as it is:
+              R3: rejected-no-effect — The tests pass on the code as it is, but they still pass when the line is altered as described.
+        round 3: 3 session(s) at the same time, answered in 41s
+              R1: rejected-no-effect — The tests pass on the code as it is, but they still pass when the line is altered as described.
+              R2: rejected-no-effect — The tests pass on the code as it is, but they still pass when the line is altered as described.
+              R3: rejected-compile — It does not compile:
+
+[17:17] STEP 14  Ask a model to break the units at the top of the list; the old code decides who is right
+        4 unit(s) attacked at the same time, one session of gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) each
+        round 1: 4 session(s) wrote in 72s; built and run on new and old code in 13s
+              A1  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken): fails-on-both — 4 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 1 other(s) pass
+              A2  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): fails-on-both — 5 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+              A3  TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic): fails-on-both — 3 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 1 other(s) pass
+              A4  TypeCollector.GetPropertyIdentifierLocation(IPropertySymbol): fails-on-both — 4 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 0 other(s) pass
+        2 test(s) kept from earlier runs because they showed a regression are run again
+              K1  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken): regression-demonstrated — 3 test(s) fail on the new code and pass on the old code: AyaK1Attack.CrossCompilationReference_WithBrokenGenericTypeMember_ReportsDiagnostic, AyaK1Attack.Collect_DirectlyOnBrokenClosedGenericTypeFromReferencedCompilation_ReportsDiagnostic, AyaK1Attack.InvalidGenericTypeInMetadataReference_UsedAsMember_ReportsDiagnostic
+              K2  TypeCollector.GetPropertyIdentifierLocation(IPropertySymbol): fails-on-both — 3 test(s) fail on the new code and on the old code alike, so the change did not cause it or the tests are wrong; 1 other(s) pass
+
+[18:54] STEP 15  Exhaustive: probe the older code that depends on the change and that no original test executes
+        0 member(s) depend on the change and are executed by no original test
+
+[18:54] STEP 16  Judge: ask a model whether each difference the change's own text does not explain was meant (an opinion, shown as one)
+        1 group(s) of differences are not explained by the change's own text; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) whether each was meant, one session per comparison
+              P2  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken): 1 intended
+        the model reads 4 thing(s) in the requirement: 4 demonstrated
+        model sessions opened in this run: 19
+        working copies found altered by an earlier run and put back to their commit: 32258f9df83c
+
+[19:14] STEP 17  Turn the results into evidence and an ordered list of where to look, and write the report
+        E1   INFO  4 changed files fall into 4 groups of similar edits
+        E2   INFO  4 non-test symbols changed across layers 0–13; the most depended-on has 31 dependent member(s); 0 public API symbols touched
+        E3   INFO  Old and new code were both built with .NET SDK 9.0.321, not the 8.0.428 the repository selects, because its source generator needs a newer compiler
+        E4   PASS  5 test project(s) and their dependencies compile with the change
+        E5   PASS  1240 of 1246 pre-existing tests pass on both old and new code; 0 regressed
+        E6   WARN  44 of those tests are fed random data, so their inputs differ on every run; they were compared per test method, not input by input
+        E7   PASS  3 new and 0 modified tests; 3 pass on the new code, 0 fail
+        E8   PASS  3 of 3 of those tests fail on the old code (they demonstrate the change); 0 pass without it; 0 cannot compile without it
+        E9   PASS  10 of 10 changed executable source lines were executed by the test suite; 0 were never executed
+        E10  WARN  8 of 11 deliberate breaks of changed lines were caught by a test; 3 went unnoticed
+        E11  WARN  4 part(s) of the change were put back as they were, one at a time: 2 are needed by at least one test (2 only by tests that came with the change), 1 can be undone with every test still passing, 1 do not compile without the rest of the change
+        E12  INFO  0 of 3 tests written by gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) were accepted: they compile, pass, and now execute 0 previously unexecuted line(s) and catch 0 of the 3 unnoticed break(s)
+        E13  WARN  2 of 2 modified unit(s) were run on the old and the new code with the same 20 input(s): 19 give the same result, 1 differ (1 changed)
+        E14  FAIL  4 unit(s) were attacked with tests written to break them: 0 resisted (0 tests), 0 with a demonstrated regression, 0 with a failing test nothing can arbitrate, 4 failing on the old code too. 2 test(s) kept from earlier runs because they showed a regression were run again: 1 still fail on the new code and pass on the old
+        E15  WARN  2542 input(s) nobody chose (151 taken from the existing tests, 2391 altered mechanically) were run on the old and the new code: 2542 give the same result, 0 differ. The inputs drove 10 of the change's 10 executable line(s). 72 input(s) that came with the change were run on the new code alone: 0 make the code under test crash, 2 get output that does not compile with no error reported. on 40 input(s) the code under test crashes on the old and on the new code alike (for example i032+a3 GenerationTests.cs:785 + an attribute argument made to repeat its sibling's)
+        E16  INFO  OPINION, not a measurement. gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) was asked whether 1 group(s) of differences the change's own text does not explain were meant: it reads 1 as what the change set out to do, 0 as not meant, 0 as artefacts of the build or the run and 0 as unclear
+        E17  INFO  OPINION, bounded by measurements. A model read 4 thing(s) the requirement asks for: 4 are shown by a test that fails without the change, 0 the change appears to do with no such test, 0 it does not address
+        E18  INFO  0 member(s) depend on the change and are run by no original test; 0 were probed within a budget of 10 session(s) and 0 could be compared on old and new code
+        not checked: 4 item(s)  |  refused to decide: 2 item(s)
+        where to look, most deserving first:
+          1. tier 1  TypeCollector.TypeCollector(Compilation, AnalyzerOptions, ReferenceSymbols, ITypeSymbol, Action<Diagnostic>?, CancellationToken)  —  a test written to break it fails on the new code and passes on the old (attacks/K1.cs, kept from the run of 2026-11-14 and run again now)
+          2. tier 3  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)  —  it modifies code that existed, 30 member(s) depend on it, and a mistake in it would go unnoticed
+          3. tier 4  The change as a whole, over 2542 inputs nobody chose  —  for 2 input(s) that came with the change the new code produces output that does not compile and reports no error of its own (for example: taken from a test that came with the change (GenericsFormatterTests.cs:523) — ERROR-GEN CS0246: The type or namespace name 'MyGenericStruct<>' could not be found (are you missing a using directive or an assembly reference?))
+          4. tier 5  TypeCollector.ReportIfLocatedInCompilation(Action<Diagnostic>, Diagnostic)  —  a mistake in it would go unnoticed, and nothing else was found against it
+          5. tier 6  TypeCollector.GetPropertyIdentifierLocation(IPropertySymbol)  —  nothing was found against it; that is not a statement that it is correct
+          6. tier 6  README.md  —  documentation: no tool checks that the text is accurate, and it cannot break the code
+          7. tier 6  doc/analyzers/MsgPack004.md  —  documentation: no tool checks that the text is accurate, and it cannot break the code
+        wrote report.md, evidence.json, graph.json and pipeline.log to <aya>\aya-out\ju26-issue-2283

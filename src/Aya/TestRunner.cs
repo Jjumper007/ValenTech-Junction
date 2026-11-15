@@ -86,7 +86,9 @@ public static partial class TestRunner
         var args = new List<string>
         {
             "test", Path.Combine(worktree, projectRel), "-c", "Debug", "--nologo", "-v", "q",
-            "--logger", "trx;LogFileName=results.trx", "--results-directory", dir,
+            // A prefix and not a fixed name: a project built for several frameworks runs once for each, and with
+            // one name the last run would overwrite the results of the others.
+            "--logger", "trx;LogFilePrefix=results", "--results-directory", dir,
         };
         if (coverage)
         {
@@ -113,10 +115,13 @@ public static partial class TestRunner
             .Distinct()
             .Take(20)
             .ToList();
-        var results = new List<TestResult>();
-        foreach (var trx in Directory.EnumerateFiles(dir, "*.trx", SearchOption.AllDirectories))
+        var results = Merge(Directory.EnumerateFiles(dir, "*.trx", SearchOption.AllDirectories).SelectMany(trx => ParseTrx(trx, projectName)));
+
+        // Compiler errors are looked for in the whole output, where a failing test can print text that looks like
+        // one. If any test ran, the project compiled.
+        if (results.Count > 0)
         {
-            results.AddRange(ParseTrx(trx, projectName));
+            errors.Clear();
         }
 
         return new TestRun
@@ -135,6 +140,17 @@ public static partial class TestRunner
             NeedsNewerCompiler = proc.All.Contains("CS9057", StringComparison.Ordinal),
         };
     }
+
+    /// <summary>
+    /// One result per test. A project built for several frameworks reports each test once per framework: it
+    /// failed if it failed on any of them, passed if it passed on at least one and failed on none, and otherwise
+    /// did not run.
+    /// </summary>
+    public static List<TestResult> Merge(IEnumerable<TestResult> results) =>
+        results
+            .GroupBy(r => r.Name, StringComparer.Ordinal)
+            .Select(g => g.FirstOrDefault(r => r.Failed) ?? g.FirstOrDefault(r => r.Passed) ?? g.First())
+            .ToList();
 
     public static IEnumerable<TestResult> ParseTrx(string file, string project)
     {

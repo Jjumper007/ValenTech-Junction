@@ -1,0 +1,202 @@
+
+[00:00] STEP 1  Read the change: which files, and what role each one plays
+        old code 32258fdb  →  new code 9007cee1 (ju26-issue-2234)
+        4 files, 266 changed lines
+        test              2 file(s)  +230 -0
+            tests/MessagePack.SourceGenerator.ExecutionTests/SuppressedSourceGenerationTests.cs
+            tests/MessagePack.SourceGenerator.Tests/SuppressSourceGenerationAnalyzerTests.cs
+        docs              1 file(s)  +14 -0
+            README.md
+        source            1 file(s)  +18 -4
+            src/MessagePack.SourceGenerator/CodeAnalysis/TypeCollector.cs
+
+[00:00] STEP 2  Find the projects the change touches and the test projects that depend on them
+        touched directly:
+            src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+            tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        test projects that depend on them:
+            tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+            tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+            tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+            tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+            tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+            tests/MessagePack.Tests/MessagePack.Tests.csproj
+
+[00:00] STEP 3  Run the tests on the NEW code, recording which lines execute
+        .NET SDK 9.0.321 (newest installed; the repo selects 8.0.428)
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   22.4s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   10.8s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   13.2s
+        MessagePack.SourceGenerator.ExecutionTests        16 passed   0 failed   0 skipped   11.4s
+        MessagePack.SourceGenerator.Tests                175 passed   0 failed   0 skipped   25.6s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   22.9s
+
+[01:47] STEP 4  Break the new code into its smallest units and link them (dependency graph)
+        loading src/MessagePack.SourceGenerator/MessagePack.SourceGenerator.csproj
+        loading tests/MessagePack.AspNetCoreMvcFormatter.Tests/MessagePack.AspNetCoreMvcFormatter.Tests.csproj
+        loading tests/MessagePack.Experimental.Tests/MessagePack.Experimental.Tests.csproj
+        loading tests/MessagePack.GeneratedCode.Tests/MessagePack.GeneratedCode.Tests.csproj
+        loading tests/MessagePack.SourceGenerator.ExecutionTests/MessagePack.SourceGenerator.ExecutionTests.csproj
+        loading tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj
+        indexing 339 files in 18 projects
+        units (nodes): 6335  =  2638 method, 1134 field, 1105 type, 938 property, 520 ctor
+        links (edges): 19693  =  11221 uses, 6924 type-ref, 796 entry, 752 dispatch
+        cycles collapsed: 96 groups of units that depend on each other (largest has 195 units)
+        layers: 37  (layer 0 depends on nothing else; each layer depends only on lower ones)
+        units per layer: L0=1587  L1=673  L2=512  L3=820  L4=319  L5=146  L6=191  L7=107  …  L36=94
+        test methods found: 617
+
+[02:31] STEP 5  Locate the changed lines in the graph: which units own them
+        TypeCollector.cs:1008, 1023–1026, 1039–1042, 1148, 1163–1166, 1179–1182  →  method TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)  [layer 13, modified]
+        SuppressSourceGenerationAnalyzerTests.cs:9–15, 193  →  test type SuppressSourceGenerationAnalyzerTests  [layer 0, added]
+        SuppressSourceGenerationAnalyzerTests.cs:16–18  →  test field SuppressSourceGenerationAnalyzerTests.Preamble  [layer 0, added]
+        SuppressedSourceGenerationTests.cs:18–19, 37  →  test type SuppressedSourceGenerationTests  [layer 0, added]
+        SuppressedSourceGenerationTests.cs:1–2, 4–10, 16  →  test type SuppressedSourceGenerationType  [layer 3, added]
+        SuppressedSourceGenerationTests.cs:11–12  →  test property SuppressedSourceGenerationType.Id  [layer 3, added]
+        SuppressedSourceGenerationTests.cs:14–15  →  test property SuppressedSourceGenerationType.Name  [layer 3, added]
+        SuppressedSourceGenerationTests.cs:20–24  →  test method SuppressedSourceGenerationTests.NoFormatterIsGeneratedForSuppressedType()  [layer 4, added]
+        SuppressedSourceGenerationTests.cs:26–29, 31–32, 34–36  →  test method SuppressedSourceGenerationTests.SuppressedTypeRoundTripsThroughDynamicResolver()  [layer 31, added]
+        SuppressSourceGenerationAnalyzerTests.cs:38–48, 50–55  →  test method SuppressSourceGenerationAnalyzerTests.AllowPrivateRequiredIsReported()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:80–88, 90–93, 95–100  →  test method SuppressSourceGenerationAnalyzerTests.DuplicateIntKeysAreReportedWithoutAnalyzerFailure()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:146–154, 156–159, 161–166  →  test method SuppressSourceGenerationAnalyzerTests.DuplicateKeysAreReportedWithoutAnalyzerFailureForGeneratedTypes()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:102–110, 112–115, 117–122  →  test method SuppressSourceGenerationAnalyzerTests.DuplicateStringKeysAreReportedWithoutAnalyzerFailure()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:57–63, 65–71, 73–78  →  test method SuppressSourceGenerationAnalyzerTests.MemberTypeMustBeMessagePackObjectIsReported()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:20–29, 31–36  →  test method SuppressSourceGenerationAnalyzerTests.MemberWithoutKeyIsReported()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:124–132, 134–137, 139–144  →  test method SuppressSourceGenerationAnalyzerTests.MixedKeyKindsAreReportedWithoutAnalyzerFailure()  [layer 34, added]
+        SuppressSourceGenerationAnalyzerTests.cs:168–178, 180–181, 183–186, 188–192  →  test method SuppressSourceGenerationAnalyzerTests.SourceGenerationOnlyDiagnosticsAreNotReportedWhenSuppressed()  [layer 34, added]
+
+[02:31] STEP 6  Run the same tests on the OLD code and compare, test by test
+        MessagePack.AspNetCoreMvcFormatter.Tests           6 passed   0 failed   0 skipped   11.2s
+        MessagePack.Experimental.Tests                    95 passed   0 failed   0 skipped   8.2s
+        MessagePack.GeneratedCode.Tests                   11 passed   0 failed   0 skipped   7.5s
+        MessagePack.SourceGenerator.ExecutionTests        14 passed   0 failed   0 skipped   6.1s
+        MessagePack.SourceGenerator.Tests                167 passed   0 failed   0 skipped   20.2s
+        MessagePack.Tests                                961 passed   0 failed   6 skipped   16s
+        tests present in both: 1260  |  pass in both: 1254  |  broken by the change: 0  |  only in the new code: 10
+
+[03:40] STEP 7  Run the change's own tests against the OLD code: do they fail without the change?
+        took the old code and copied in only the 2 test file(s) of the change
+        MessagePack.SourceGenerator.Tests                  4 passed   4 failed   0 skipped   9.2s
+            SuppressSourceGenerationAnalyzerTests.AllowPrivateRequiredIsReported: Passed on old code  →  non-discriminating
+            SuppressSourceGenerationAnalyzerTests.DuplicateIntKeysAreReportedWithoutAnalyzerFailure: Failed on old code  →  discriminating
+            SuppressSourceGenerationAnalyzerTests.DuplicateKeysAreReportedWithoutAnalyzerFailureForGeneratedTypes: Failed on old code  →  discriminating
+            SuppressSourceGenerationAnalyzerTests.DuplicateStringKeysAreReportedWithoutAnalyzerFailure: Failed on old code  →  discriminating
+            SuppressSourceGenerationAnalyzerTests.MemberTypeMustBeMessagePackObjectIsReported: Passed on old code  →  non-discriminating
+            SuppressSourceGenerationAnalyzerTests.MemberWithoutKeyIsReported: Passed on old code  →  non-discriminating
+            SuppressSourceGenerationAnalyzerTests.MixedKeyKindsAreReportedWithoutAnalyzerFailure: Failed on old code  →  discriminating
+            SuppressSourceGenerationAnalyzerTests.SourceGenerationOnlyDiagnosticsAreNotReportedWhenSuppressed: Passed on old code  →  non-discriminating
+        MessagePack.SourceGenerator.ExecutionTests         2 passed   0 failed   0 skipped   7.4s
+            SuppressedSourceGenerationTests.NoFormatterIsGeneratedForSuppressedType: Passed on old code  →  non-discriminating
+            SuppressedSourceGenerationTests.SuppressedTypeRoundTripsThroughDynamicResolver: Passed on old code  →  non-discriminating
+
+[03:57] STEP 8  Attach the results to each changed unit, from the lowest layer up
+        coverage data for 417 source files
+        layer 13  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)
+                  changed lines run 13, not run 5 (1148, 1179–1182)  |  29 units depend on it (0 of 29 measured ones run by no test)  |  138 tests can reach it  →  partly-executed
+
+[03:58] STEP 9  Break each changed line on purpose and see whether any test notices (mutation testing)
+        10 possible breaks on 10 changed lines; running 7; 3 are on lines no test executes
+        M1   TypeCollector.cs:1008  continue removed         CAUGHT by SuppressSourceGenerationAnalyzerTests.MixedKeyKindsAreReportedWithoutAnalyzerFailure   18.9s
+                 continue;
+        M2   TypeCollector.cs:1023  !x → x                   CAUGHT by GenerationTests.AdditionalAllowTypes and 44 more   19.6s
+                 !intMembers.ContainsKey(member.IntKey)
+        M3   TypeCollector.cs:1025  statement removed        CAUGHT by GenerationTests.AdditionalAllowTypes and 44 more   15.8s
+                 intMembers.Add(member.IntKey, (member, item.Type));
+        M4   TypeCollector.cs:1039  !x → x                   CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 2 more   18.1s
+                 !stringMembers.ContainsKey(member.StringKey)
+        M5   TypeCollector.cs:1041  statement removed        CAUGHT by CustomStringKeyFormatterTests.RecordWithPrimaryConstructor and 2 more   18.6s
+                 stringMembers.Add(member.StringKey, (member, item.Type));
+        M7   TypeCollector.cs:1163  !x → x                   CAUGHT by GenerationTests.CustomFormatterForGenericWithConstraints and 10 more   18.4s
+                 !intMembers.ContainsKey(member.IntKey)
+        M8   TypeCollector.cs:1165  statement removed        CAUGHT by GenerationTests.CustomFormatterForGenericWithConstraints and 10 more   17.6s
+                 intMembers.Add(member.IntKey, (member, item.Type));
+
+[06:05] STEP 10  Undo the change one part at a time and see whether any test needs that part
+        the change has 6 part(s) with executable lines; undoing 6 of them, one at a time
+        V1   TypeCollector.cs:1008–1008  NEEDED by 1 test(s), 0 of which existed before (e.g. SuppressSourceGenerationAnalyzerTests.MixedKeyKindsAreReportedWithoutAnalyzerFailure)   18.4s
+        V2   TypeCollector.cs:1023–1026  NEEDED by 2 test(s), 0 of which existed before (e.g. SuppressSourceGenerationAnalyzerTests.DuplicateIntKeysAreReportedWithoutAnalyzerFailure)   17.1s
+        V3   TypeCollector.cs:1039–1042  NEEDED by 1 test(s), 0 of which existed before (e.g. SuppressSourceGenerationAnalyzerTests.DuplicateStringKeysAreReportedWithoutAnalyzerFailure)   14.6s
+        V4   TypeCollector.cs:1148–1148  NO TEST NEEDS IT: with the old lines back every test still passes   0.0s
+        V5   TypeCollector.cs:1163–1166  NO TEST NEEDS IT: with the old lines back every test still passes   17.8s
+        V6   TypeCollector.cs:1179–1182  NO TEST NEEDS IT: with the old lines back every test still passes   0.0s
+
+[07:13] STEP 11  Run the same inputs through the OLD and the NEW code and see where the results differ
+        1 unit(s) already existed and were modified; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for a probe for 1
+        round 1: 1 session(s) at the same time, answered in 28s
+              P1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): compared — 11 of 14 case(s) differ: 11 changed
+
+[08:07] STEP 12  Sweep: run inputs nobody chose (the existing tests' own, and altered with what the change adds) through the OLD and the NEW code
+        151 input(s) found in the tests of tests/MessagePack.SourceGenerator.Tests/MessagePack.SourceGenerator.Tests.csproj; 151 taken as they are and 2391 altered mechanically:
+          58 × the types other types use moved to a referenced library
+         151 × every type nested in an outer class
+          30 × an attribute argument made to repeat its sibling's
+          30 × an attribute argument changed to the other kind of literal
+          30 × an attribute argument made null
+          31 × the attributes removed from every type another type uses
+         131 × every attribute removed from every type
+          91 × every attribute removed from every member
+          11 × `partial` removed wherever it appears
+           2 × `sealed` removed wherever it appears
+        … and 24 more
+        round 1: 1 session(s) at the same time, answered in 45s
+              S1  the change as a whole, over 2542 inputs built from the existing tests: rejected-compile — It does not compile on the new code.
+        round 2: 1 session(s) at the same time, answered in 14s
+              S1  the change as a whole, over 2542 inputs built from the existing tests: compared — 49 of 2542 case(s) differ: 1 fails-differently, 38 now-works, 10 changed
+        the inputs drove 18 of the change's 18 executable line(s); 2493 of 2542 give the same result on old and new code, 49 differ, 49 of them only once the input is altered
+        on 1 input(s) the code under test crashes on the old and on the new code alike (for example i036+a5 GenerationTests.cs:905 + an attribute argument made null)
+        156 input(s) that came with the change (8 as they are) were run on the new code alone: 0 make the code under test crash, 0 get output that does not compile with no error reported
+
+[11:03] STEP 13  Ask a model for tests that fill the gaps, and check every one before believing it
+        1 gap(s): 1 stretch(es) of unexecuted code, 0 unnoticed break(s); asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) for 1
+        R1  never executed: TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?), line(s) 1148, 1179–1182
+        round 1: 1 session(s) at the same time, answered in 24s
+              R1: accepted — passes and executes line(s) 1148, 1179–1182
+
+[11:37] STEP 14  Ask a model to break the units at the top of the list; the old code decides who is right
+        1 unit(s) attacked at the same time, one session of gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) each
+        round 1: 1 session(s) wrote in 50s; built and run on new and old code in 16s
+              A1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): regression-demonstrated — 4 test(s) fail on the new code and pass on the old code: AyaA1Attack.MixedStringThenIntKeyOnPropertyStillReportsGenericElementTypeMustBeMessagePackObject, AyaA1Attack.MixedStringThenIntKeyOnStructPropertyStillReportsMemberTypeMustBeMessagePackObject, AyaA1Attack.MixedStringThenIntKeyOnSuppressedObjectPropertyStillReportsMemberTypeMustBeMessagePackObject, AyaA1Attack.MixedStringThenIntKeyOnPropertyStillReportsMemberTypeMustBeMessagePackObject
+        3 test(s) kept from earlier runs because they showed a regression are run again
+              K1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): regression-demonstrated — 2 test(s) fail on the new code and pass on the old code: AyaK1Attack.StringThenIntKeyPropertyStillHasItsTypeValidatedForGeneratedTypes, AyaK1Attack.StringThenIntKeyPropertyStillHasItsTypeValidated
+              K2  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): regression-demonstrated — 2 test(s) fail on the new code and pass on the old code: AyaK2Attack.MixedKeyKindPropertyStillReportsUnserializableType_Generated, AyaK2Attack.MixedKeyKindPropertyStillReportsUnserializableType_Suppressed
+              K3  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): regression-demonstrated — 1 test(s) fail on the new code and pass on the old code: AyaK3Attack.MixedIntKeyPropertyAfterStringKeyWithUnserializableTypeReportsBothDiagnostics
+
+[13:04] STEP 15  Exhaustive: probe the older code that depends on the change and that no original test executes
+        0 member(s) depend on the change and are executed by no original test
+
+[13:04] STEP 16  Judge: ask a model whether each difference the change's own text does not explain was meant (an opinion, shown as one)
+        17 group(s) of differences are not explained by the change's own text; asking gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) whether each was meant, one session per comparison
+              P1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?): 5 not-intended
+              S1  the change as a whole, over 2542 inputs built from the existing tests: 12 not-intended
+        the model reads 2 thing(s) in the requirement: 1 demonstrated, 1 contradicted
+        model sessions opened in this run: 8
+        working copies found altered by an earlier run and put back to their commit: 32258f9007ce
+
+[13:35] STEP 17  Turn the results into evidence and an ordered list of where to look, and write the report
+        E1   INFO  4 changed files fall into 4 groups of similar edits
+        E2   INFO  1 non-test symbols changed across layers 13–13; the most depended-on has 29 dependent member(s); 0 public API symbols touched
+        E3   INFO  Old and new code were both built with .NET SDK 9.0.321, not the 8.0.428 the repository selects, because its source generator needs a newer compiler
+        E4   PASS  6 test project(s) and their dependencies compile with the change
+        E5   PASS  1254 of 1260 pre-existing tests pass on both old and new code; 0 regressed
+        E6   WARN  44 of those tests are fed random data, so their inputs differ on every run; they were compared per test method, not input by input
+        E7   PASS  10 new and 0 modified tests; 10 pass on the new code, 0 fail
+        E8   WARN  4 of 10 of those tests fail on the old code (they demonstrate the change); 6 pass without it; 0 cannot compile without it
+        E9   WARN  13 of 18 changed executable source lines were executed by the test suite; 5 were never executed
+        E10  WARN  7 of 7 deliberate breaks of changed lines were caught by a test; 0 went unnoticed; 3 more are on lines no test executes
+        E11  WARN  6 part(s) of the change were put back as they were, one at a time: 3 are needed by at least one test (3 only by tests that came with the change), 3 can be undone with every test still passing
+        E12  INFO  1 of 1 tests written by gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) were accepted: they compile, pass, and now execute 5 previously unexecuted line(s) and catch 0 of the 0 unnoticed break(s)
+        E13  WARN  1 of 1 modified unit(s) were run on the old and the new code with the same 14 input(s): 3 give the same result, 11 differ (11 changed)
+        E14  FAIL  1 unit(s) were attacked with tests written to break them: 0 resisted (0 tests), 1 with a demonstrated regression, 0 with a failing test nothing can arbitrate, 0 failing on the old code too. 3 test(s) kept from earlier runs because they showed a regression were run again: 3 still fail on the new code and pass on the old
+        E15  WARN  2542 input(s) nobody chose (151 taken from the existing tests, 2391 altered mechanically) were run on the old and the new code: 2493 give the same result, 49 differ (1 fails-differently, 38 now-works, 10 changed); 49 difference(s) show only once the input is altered. The inputs drove 18 of the change's 18 executable line(s). 156 input(s) that came with the change were run on the new code alone: 0 make the code under test crash, 0 get output that does not compile with no error reported. on 1 input(s) the code under test crashes on the old and on the new code alike (for example i036+a5 GenerationTests.cs:905 + an attribute argument made null)
+        E16  INFO  OPINION, not a measurement. gemini-4-hydrogen-medium (Gemini, through the Antigravity command line) was asked whether 17 group(s) of differences the change's own text does not explain were meant: it reads 0 as what the change set out to do, 17 as not meant, 0 as artefacts of the build or the run and 0 as unclear
+        E17  WARN  OPINION, bounded by measurements. A model read 2 thing(s) the requirement asks for: 1 are shown by a test that fails without the change, 0 the change appears to do with no such test, 0 it does not address, and in 1 the change does less than, or something other than, what is asked
+        E18  INFO  0 member(s) depend on the change and are run by no original test; 0 were probed within a budget of 6 session(s) and 0 could be compared on old and new code
+        not checked: 2 item(s)  |  refused to decide: 9 item(s)
+        where to look, most deserving first:
+          1. tier 1  TypeCollector.GetObjectInfo(INamedTypeSymbol, ISymbol?)  —  a test written to break it fails on the new code and passes on the old (attacks/A1.cs)
+          2. tier 2  The change as a whole, over 2542 inputs nobody chose  —  11 input(s) give a different result than on the old code, and the change's own text does not explain it
+          3. tier 4  The requirement: 1 of the 2 thing(s) it asks for are not shown by any test  —  a model reads "The analyzer does not work if SuppressSourceGeneration = true." as contradicted: The change also alters analyzer behavior for generated MessagePackObject types without SuppressSourceGeneration = true, which goes beyond what the requirement asks for. (its opinion)
+          4. tier 5  6 of the 10 tests that came with the change  —  they were not shown to fail without the change, so they do not demonstrate it
+          5. tier 6  README.md  —  documentation: no tool checks that the text is accurate, and it cannot break the code
+        wrote report.md, evidence.json, graph.json and pipeline.log to <aya>\aya-out\ju26-issue-2234

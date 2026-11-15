@@ -14,7 +14,7 @@ public sealed class CaseDifference
     /// now-fails: gave a result, now throws. changed: gave a result, now gives another. fails-differently: threw,
     /// now throws something else. now-works: threw, now gives a result. missing-on-new: the case no longer records.
     /// </summary>
-    public required string Kind { get; init; }
+    public required string Kind { get; set; }
 
     public required string Old { get; init; }
 
@@ -22,6 +22,94 @@ public sealed class CaseDifference
 
     /// <summary>Differences with the same group are the same alteration seen on different inputs.</summary>
     public required string Group { get; init; }
+
+    /// <summary>
+    /// explained: every line that differs is text the change itself added or removed, so the difference is the
+    /// change showing through. unexplained: something differs that is not in the change's text. Null when the
+    /// check does not apply. Explained is not the same as correct.
+    /// </summary>
+    public string? ByChange { get; init; }
+
+    /// <summary>What a model believes about whether the difference was meant, with the text it bases that on. An opinion.</summary>
+    public Judgement? Judgement { get; set; }
+
+    /// <summary>The lines that left and the lines that arrived, taken from the whole values before they were cut for storage.</summary>
+    public string Delta { get; init; } = string.Empty;
+
+    /// <summary>For a sweep: where the input came from, an existing test or a mechanical alteration of one.</summary>
+    public string? Input { get; set; }
+
+    /// <summary>For a sweep: the difference shows only once the input is altered; the input it was made from does not have it.</summary>
+    public bool OnlyWhenAltered { get; set; }
+}
+
+/// <summary>
+/// A model's reading of whether a difference is what the change set out to do. It is never a fact: it is shown
+/// as an opinion, with the words of the change it quotes, and it can only send a difference up the list.
+/// </summary>
+public sealed record Judgement(string Verdict, string Quote, string Reason);
+
+/// <summary>
+/// The lines a change added to and removed from the code, kept to recognise them when they show up in a result.
+/// Code that writes text (a generator, a template, an error message) puts the lines of the change into its
+/// output, and a difference made only of those lines is the change showing through, not a surprise.
+/// </summary>
+public sealed class ChangeText
+{
+    /// <summary>
+    /// A line shorter than this (`true`, `0`, a name) is found inside almost any change, so finding it inside a
+    /// longer line explains nothing. A short line counts only when the change has that very line (`#endif`).
+    /// </summary>
+    private const int Shortest = 12;
+    private readonly List<string> added;
+    private readonly List<string> removed;
+    private readonly HashSet<string> addedWhole;
+    private readonly HashSet<string> removedWhole;
+
+    public ChangeText(IEnumerable<string> addedLines, IEnumerable<string> removedLines)
+    {
+        this.added = addedLines.Select(Normal).Where(l => l.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        this.removed = removedLines.Select(Normal).Where(l => l.Length > 0).Distinct(StringComparer.Ordinal).ToList();
+        this.addedWhole = this.added.ToHashSet(StringComparer.Ordinal);
+        this.removedWhole = this.removed.ToHashSet(StringComparer.Ordinal);
+    }
+
+    /// <summary>The lines the change added, with their spacing made uniform.</summary>
+    public IReadOnlyList<string> AddedLines => this.added;
+
+    public static ChangeText From(IEnumerable<FileChange> files)
+    {
+        var code = files.Where(f => f.Category is "source" or "template" or "generated").ToList();
+        return new ChangeText(code.SelectMany(f => f.Hunks.SelectMany(h => h.Added)), code.SelectMany(f => f.Hunks.SelectMany(h => h.Removed)))
+        {
+            TemplateLines = code.Where(f => f.Category == "template").SelectMany(f => f.Hunks.SelectMany(h => h.Added)).Select(Normal).ToHashSet(StringComparer.Ordinal),
+        };
+    }
+
+    /// <summary>The added lines that sit in a template: every one of them is text the code writes out.</summary>
+    public IReadOnlySet<string> TemplateLines { get; init; } = new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Whether everything that differs between two results is text of the change: every line that arrived is in
+    /// a line the change added, and every line that went is in a line the change removed. Lines too short to
+    /// tell anything on their own (a brace) are left out. A long line is recognised inside a line of the change,
+    /// because code that writes text holds its lines inside string literals; a short one only as a whole line.
+    /// </summary>
+    public bool Explains(string was, string now)
+    {
+        var before = was.Split('\n').Select(Normal).ToHashSet(StringComparer.Ordinal);
+        var after = now.Split('\n').Select(Normal).ToHashSet(StringComparer.Ordinal);
+        var arrived = after.Where(l => !before.Contains(l) && l.Any(char.IsLetterOrDigit)).ToList();
+        var gone = before.Where(l => !after.Contains(l) && l.Any(char.IsLetterOrDigit)).ToList();
+        return arrived.Count + gone.Count > 0
+            && arrived.All(l => Has(l, this.added, this.addedWhole))
+            && gone.All(l => Has(l, this.removed, this.removedWhole));
+    }
+
+    private static bool Has(string line, List<string> lines, HashSet<string> whole) =>
+        line.Length >= Shortest ? lines.Any(a => a.Contains(line, StringComparison.Ordinal)) : whole.Contains(line);
+
+    private static string Normal(string line) => string.Join(' ', line.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 }
 
 /// <summary>
@@ -32,7 +120,10 @@ public sealed class Comparison
 {
     public required string Request { get; init; }
 
-    /// <summary>modified-unit: code the change edited. untested-dependent: older code that depends on it and that no test executes.</summary>
+    /// <summary>
+    /// modified-unit: code the change edited. untested-dependent: older code that depends on it and that no test
+    /// executes. sweep: the whole change, over inputs AYA built instead of a model.
+    /// </summary>
     public required string Purpose { get; init; }
 
     public required string Symbol { get; init; }
@@ -79,11 +170,26 @@ public sealed class Comparison
     [JsonIgnore]
     public string? Code { get; set; }
 
+    /// <summary>Names the change introduced. A probe must not use them: its inputs have to make sense on the old code.</summary>
+    [JsonIgnore]
+    public List<string> Introduced { get; set; } = new();
+
     [JsonIgnore]
     public Dictionary<string, string> HeadRecords { get; set; } = new();
 
     [JsonIgnore]
     public HashSet<string> StableKeys { get; set; } = new();
+
+    /// <summary>For a sweep: the file of inputs AYA built, which the harness reads instead of choosing its own.</summary>
+    [JsonIgnore]
+    public string? InputsFile { get; set; }
+
+    /// <summary>For a sweep: every changed executable line, by file. Reaching any of them counts.</summary>
+    [JsonIgnore]
+    public Dictionary<string, List<int>>? Wider { get; set; }
+
+    [JsonIgnore]
+    public int WiderHit { get; set; }
 
     public int Count(string kind) => this.Differences.Count(d => d.Kind == kind);
 }
@@ -132,7 +238,41 @@ public sealed partial class Comparer(ModelSession session)
         internal static class AyaProbe
         {
             private const string OutputPath = @"__OUT__";
+            private const string InputsPath = @"__IN__";
             private static readonly object Gate = new object();
+
+            public static System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, string>> Inputs()
+            {
+                var list = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, string>>();
+                if (InputsPath.Length == 0 || !File.Exists(InputsPath)) { return list; }
+                foreach (var line in File.ReadAllLines(InputsPath, Encoding.UTF8))
+                {
+                    var tab = line.IndexOf('\t');
+                    if (tab <= 0) { continue; }
+                    list.Add(new System.Collections.Generic.KeyValuePair<string, string>(Unescape(line.Substring(0, tab)), Unescape(line.Substring(tab + 1))));
+                }
+
+                return list;
+            }
+
+            private static string Unescape(string text)
+            {
+                var sb = new StringBuilder(text.Length);
+                for (var i = 0; i < text.Length; i++)
+                {
+                    if (text[i] == '\\' && i + 1 < text.Length)
+                    {
+                        i++;
+                        sb.Append(text[i] == 'n' ? '\n' : text[i] == 't' ? '\t' : text[i]);
+                    }
+                    else
+                    {
+                        sb.Append(text[i]);
+                    }
+                }
+
+                return sb.ToString();
+            }
 
             public static void Record<T>(string name, Func<T> produce)
             {
@@ -215,11 +355,14 @@ public sealed partial class Comparer(ModelSession session)
         }
         """;
 
+    private ChangeText? change;
+
     public string Name => session.Name;
 
     /// <summary>One probe per unit the change modified, most depended-on first.</summary>
     public List<Comparison> CompareModified(Workbench w, CodeGraph graph, ReviewResult result, string outDir, int max)
     {
+        this.change = ChangeText.From(result.Files);
         var targets = result.ChangedSymbols
             .Where(c => !c.IsTest && c.ChangeKind == "modified" && c.CoveredLines.Count + c.UncoveredLines.Count > 0)
             .OrderByDescending(c => c.Dependents)
@@ -252,6 +395,7 @@ public sealed partial class Comparer(ModelSession session)
         string outDir,
         int sessionBudget)
     {
+        this.change = ChangeText.From(result.Files);
         var summary = new ExhaustiveSummary { Candidates = candidates.Count, SessionBudget = sessionBudget };
         w.Trace.Info($"{candidates.Count} member(s) depend on the change and are executed by no original test");
         if (candidates.Count == 0)
@@ -284,9 +428,19 @@ public sealed partial class Comparer(ModelSession session)
             }
 
             var moved = new List<string>();
+            var unmeasured = 0;
             foreach (var p in probes)
             {
-                var broken = w.WithFile(mutant.File, text, () => this.RunProbe(w, w.Work, p, p.Code!, $"{p.Request}-with-{mutant.Id}", coverage: false).Records);
+                var (brokenRun, broken) = w.WithFile(mutant.File, text, () => this.RunProbe(w, w.Work, p, p.Code!, $"{p.Request}-with-{mutant.Id}", coverage: false));
+
+                // Only a run that completed says anything. One that did not build, hung or recorded nothing would
+                // otherwise look like every output having changed.
+                if (!brokenRun.Built || brokenRun.Problem is not null || broken.Count == 0)
+                {
+                    unmeasured++;
+                    continue;
+                }
+
                 var keys = p.StableKeys.Count > 0 ? p.StableKeys : p.HeadRecords.Keys.ToHashSet(StringComparer.Ordinal);
                 if (keys.Any(k => p.HeadRecords.TryGetValue(k, out var was) && (!broken.TryGetValue(k, out var now) || now != was)))
                 {
@@ -294,7 +448,7 @@ public sealed partial class Comparer(ModelSession session)
                 }
             }
 
-            summary.Impacts.Add(new BlindImpact(c.Display, $"{Path.GetFileName(mutant.File)}:{mutant.Line} {mutant.Description}", probes.Count, moved.Count, moved));
+            summary.Impacts.Add(new BlindImpact(c.Display, $"{Path.GetFileName(mutant.File)}:{mutant.Line} {mutant.Description}", probes.Count - unmeasured, moved.Count, moved));
             w.Trace.Info($"breaking {c.Display} ({mutant.Description}, line {mutant.Line}) changes the output of {moved.Count} of {probes.Count} probed dependent(s)");
         }
 
@@ -308,7 +462,9 @@ public sealed partial class Comparer(ModelSession session)
     public static (List<CaseDifference> Differences, HashSet<string> Stable, int Unstable, int Same, int OnlyOnNew) Sort(
         Dictionary<string, string> oldFirst,
         Dictionary<string, string> oldSecond,
-        Dictionary<string, string> head)
+        Dictionary<string, string> head,
+        ChangeText? change = null,
+        bool errorLines = false)
     {
         var stable = oldFirst.Where(kv => oldSecond.TryGetValue(kv.Key, out var again) && again == kv.Value).Select(kv => kv.Key).ToHashSet(StringComparer.Ordinal);
         var unstable = oldFirst.Keys.Union(oldSecond.Keys).Count(k => !stable.Contains(k));
@@ -334,7 +490,19 @@ public sealed partial class Comparer(ModelSession session)
                     (true, true) => "fails-differently",
                     _ => "changed",
                 };
-                differences.Add(Difference(key, kind, was, now));
+
+                // A sweep records one text per input, and the lines of it that begin with ERROR are the failures.
+                // An input that had none and now has one is an input that worked and no longer does.
+                if (errorLines && kind == "changed")
+                {
+                    var (failedBefore, failsNow) = (ErrorLines(was), ErrorLines(now));
+                    kind = failedBefore.Count == 0 && failsNow.Count > 0 ? "now-fails"
+                        : failedBefore.Count > 0 && failsNow.Count == 0 ? "now-works"
+                        : failedBefore.Count > 0 && !failedBefore.SetEquals(failsNow) ? "fails-differently"
+                        : kind;
+                }
+
+                differences.Add(Difference(key, kind, was, now, change));
             }
         }
 
@@ -343,21 +511,51 @@ public sealed partial class Comparer(ModelSession session)
     }
 
     /// <summary>The lines that left and the lines that arrived between two recorded values.</summary>
+    /// <remarks>
+    /// A line that leaves or arrives many times is shown once with its count, and a line saying the input no
+    /// longer works (ERROR) is shown first: on a long result it would otherwise be the last thing anyone reads.
+    /// </remarks>
     public static string Delta(string was, string now)
+    {
+        var (gone, arrived) = Moved(was, now);
+        return string.Join("\n", Once(gone, "- ").Concat(Once(arrived, "+ ")).OrderByDescending(l => l[2..].TrimStart().StartsWith("ERROR ", StringComparison.Ordinal)));
+
+        static IEnumerable<string> Once(List<string> lines, string sign) =>
+            lines.GroupBy(l => l.Trim(), StringComparer.Ordinal).Select(g => sign + g.First() + (g.Count() > 1 ? $"   (×{g.Count()})" : string.Empty));
+    }
+
+    /// <summary>
+    /// What tells one alteration from another: which lines left and which arrived, whatever their number, order
+    /// or indentation. The same edit seen on a result with five classes and on one with seven is one alteration.
+    /// </summary>
+    private static string Signature(string was, string now)
+    {
+        var (gone, arrived) = Moved(was, now);
+        return string.Join("\n", gone.Select(l => "- " + l.Trim()).Concat(arrived.Select(l => "+ " + l.Trim())).Distinct(StringComparer.Ordinal).OrderBy(l => l, StringComparer.Ordinal));
+    }
+
+    private static (List<string> Gone, List<string> Arrived) Moved(string was, string now)
     {
         var before = was.Split('\n');
         var after = now.Split('\n');
         var kept = after.ToHashSet(StringComparer.Ordinal);
         var had = before.ToHashSet(StringComparer.Ordinal);
-        return string.Join("\n", before.Where(l => !kept.Contains(l)).Select(l => "- " + l).Concat(after.Where(l => !had.Contains(l)).Select(l => "+ " + l)));
+        return (before.Where(l => !kept.Contains(l)).ToList(), after.Where(l => !had.Contains(l)).ToList());
     }
 
     private static bool Throws(string value) => value.StartsWith("EXCEPTION ", StringComparison.Ordinal);
 
-    private static CaseDifference Difference(string key, string kind, string was, string now)
+    private static HashSet<string> ErrorLines(string value) =>
+        value.Split('\n').Select(l => l.Trim()).Where(l => l.StartsWith("ERROR", StringComparison.Ordinal) || l.StartsWith("CRASH ", StringComparison.Ordinal)).ToHashSet(StringComparer.Ordinal);
+
+    private static CaseDifference Difference(string key, string kind, string was, string now, ChangeText? change = null)
     {
-        var group = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(kind + "\n" + Delta(was, now))))[..6].ToLowerInvariant();
-        return new CaseDifference { Case = key, Kind = kind, Old = Clip(was), New = Clip(now), Group = group };
+        var delta = Delta(was, now);
+        var group = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(kind + "\n" + Signature(was, now))))[..6].ToLowerInvariant();
+
+        // Only a result that became another result can be the change showing through. A failure cannot.
+        var byChange = change is null || kind != "changed" ? null : change.Explains(was, now) ? "explained" : "unexplained";
+        return new CaseDifference { Case = key, Kind = kind, Old = Clip(was), New = Clip(now), Group = group, ByChange = byChange, Delta = delta.Length > 1500 ? delta[..1500] + "…" : delta };
     }
 
     private static string Clip(string value) => value.Length > 500 ? value[..500] + "…" : value;
@@ -382,12 +580,18 @@ public sealed partial class Comparer(ModelSession session)
         }
         else
         {
+            request.Introduced = Introduced(result);
             request.Prompt = BuildPrompt(w, graph, request, pattern, marked);
         }
 
         return request;
     }
 
+    /// <summary>
+    /// Works in rounds. In each one every open request gets a session of its own, all at the same time; the probes
+    /// that come back are then run on both versions one by one, and what was rejected goes into the next round
+    /// with what happened to it.
+    /// </summary>
     private void RunAll(Workbench w, List<Comparison> requests, string outDir, int sessionBudget, string prefix, int maxRequests)
     {
         var requestDir = Path.Combine(outDir, "probe-requests");
@@ -399,65 +603,88 @@ public sealed partial class Comparer(ModelSession session)
             File.Delete(stale);
         }
 
-        var started = session.Sessions;
-        var taken = 0;
+        var pending = new List<Comparison>();
         foreach (var c in requests.Where(r => r.TestProject is not null))
         {
             File.WriteAllText(Path.Combine(requestDir, c.Request + ".md"), c.Prompt);
-            if (session.Sessions - started >= sessionBudget || taken >= maxRequests)
+            if (pending.Count >= maxRequests)
             {
                 continue;
             }
 
-            taken++;
-
-            w.Trace.Info($"{c.Request}  {c.Symbol}");
             if (!File.Exists(Path.Combine(w.OldWork, c.TestProject!)))
             {
                 (c.Status, c.Detail) = ("no-old-version", "the test project does not exist in the old code, so nothing can be run there");
-                w.Trace.Info($"      {c.Status} — {c.Detail}");
+                w.Trace.Info($"{c.Request}  {c.Symbol}: {c.Status}");
                 continue;
             }
 
-            var prompt = c.Prompt;
-            string? code = null;
-            for (var attempt = 1; attempt <= MaxAttempts && session.Sessions - started < sessionBudget; attempt++)
+            pending.Add(c);
+        }
+
+        var started = session.Sessions;
+        var prompts = pending.ToDictionary(c => c.Request, c => c.Prompt);
+        var latest = new Dictionary<string, string>(StringComparer.Ordinal);
+        for (var round = 1; round <= MaxAttempts && pending.Count > 0; round++)
+        {
+            // The budget is in sessions, so a round takes only as many requests as there are sessions left.
+            var left = sessionBudget == int.MaxValue ? pending.Count : sessionBudget - (session.Sessions - started);
+            var batch = pending.Take(Math.Max(0, left)).ToList();
+            if (batch.Count == 0)
             {
-                code = session.AskForCode(prompt, out var error);
-                c.Attempts = attempt;
+                break;
+            }
+
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var answers = session.AskAll(batch.Select(c => prompts[c.Request]).ToList());
+            w.Trace.Info($"round {round}: {batch.Count} session(s) at the same time, answered in {clock.Elapsed.TotalSeconds:0}s");
+            for (var i = 0; i < batch.Count; i++)
+            {
+                var c = batch[i];
+                var (code, error) = answers[i];
+                c.Attempts = round;
                 if (code is null)
                 {
                     (c.Status, c.Detail) = ("writer-failed", error);
-                    w.Trace.Info($"      try {attempt}: the model gave no usable answer — {error}");
-                    break;
+                    w.Trace.Info($"      {c.Request}  {c.Symbol}: the model gave no usable answer — {error}");
+                    continue;
                 }
 
-                this.Check(w, c, code, attempt);
-                w.Trace.Info($"      try {attempt}: {c.Status} — {c.Detail.Split('\n')[0]}");
-                if (c.Status == "compared")
+                latest[c.Request] = code;
+                this.Check(w, c, code, round);
+                w.Trace.Info($"      {c.Request}  {c.Symbol}: {c.Status} — {c.Detail.Split('\n')[0]}");
+                if (c.Status != "compared")
                 {
-                    break;
+                    prompts[c.Request] = c.Prompt +
+                        "\n\n## Your previous attempt\n```csharp\n" + code.Trim() + "\n```\n\n" +
+                        "## What happened when it was built and run\n" + c.Detail + "\n\n" +
+                        "Fix it. Reply with the whole corrected file in a single csharp code block and nothing else.";
                 }
-
-                prompt = c.Prompt +
-                    "\n\n## Your previous attempt\n```csharp\n" + code.Trim() + "\n```\n\n" +
-                    "## What happened when it was built and run\n" + c.Detail + "\n\n" +
-                    "Fix it. Reply with the whole corrected file in a single csharp code block and nothing else.";
             }
 
-            if (code is not null)
-            {
-                var name = c.Status == "compared" ? c.Request + ".cs" : c.Request + ".rejected.cs";
-                File.WriteAllText(Path.Combine(probeDir, name), code);
-                c.ProbeFile = "probes/" + name;
-                c.Code = c.Status == "compared" ? code : null;
-            }
+            pending = batch.Where(c => c.Status is not ("compared" or "writer-failed")).ToList();
+        }
+
+        foreach (var c in requests.Where(c => latest.ContainsKey(c.Request)))
+        {
+            var name = c.Status == "compared" ? c.Request + ".cs" : c.Request + ".rejected.cs";
+            File.WriteAllText(Path.Combine(probeDir, name), latest[c.Request]);
+            c.ProbeFile = "probes/" + name;
+            c.Code = c.Status == "compared" ? latest[c.Request] : null;
         }
     }
 
     /// <summary>Accepts a probe only if it runs on both versions and is measured to execute the code it is about.</summary>
     private void Check(Workbench w, Comparison c, string code, int attempt)
     {
+        // A probe that uses what the change introduced is exercising the new feature, not the behaviour that
+        // existed before, and every such input would show up as a difference.
+        if (c.Introduced.FirstOrDefault(name => code.Contains(name, StringComparison.Ordinal)) is { } introduced)
+        {
+            (c.Status, c.Detail) = ("rejected-new-feature", $"It mentions {introduced}, which the change introduced. Every input must be one the old version already handled: the point is to see whether behaviour that existed has changed. Do not use anything the change added.");
+            return;
+        }
+
         if (ModelSession.Trick(code) is { } trick)
         {
             (c.Status, c.Detail) = ("rejected-artificial", ModelSession.TrickMessage(trick));
@@ -473,6 +700,13 @@ public sealed partial class Comparer(ModelSession session)
 
         var executed = run.CoverageFile is null ? null : TestRunner.ParseCoverage(run.CoverageFile, w.Work);
         var hit = c.Lines.Count(l => executed is not null && executed.TryGetValue(c.File, out var ls) && ls.TryGetValue(l, out var hits) && hits > 0);
+        if (c.Wider is { } wider)
+        {
+            // A sweep is about the whole change: what counts is how many of all its lines the inputs drove.
+            hit = wider.Sum(f => f.Value.Count(l => executed is not null && executed.TryGetValue(f.Key, out var ls) && ls.TryGetValue(l, out var hits) && hits > 0));
+            c.WiderHit = hit;
+        }
+
         if (hit == 0)
         {
             (c.Status, c.Detail) = ("rejected-no-effect", $"The probe runs, but it executed none of the lines it is about ({ReviewCommand.Ranges(c.Lines)} of {c.File}). Its cases must reach that code.");
@@ -486,8 +720,16 @@ public sealed partial class Comparer(ModelSession session)
             return;
         }
 
-        var (_, second) = this.RunProbe(w, w.OldWork, c, code, $"{c.Request}-try{attempt}-old2", coverage: false);
-        var sorted = Sort(first, second, head);
+        var (secondRun, second) = this.RunProbe(w, w.OldWork, c, code, $"{c.Request}-try{attempt}-old2", coverage: false);
+        if (Rejection(secondRun, second, "old") is { } onOldAgain)
+        {
+            // The same code and the same probe as a moment ago. If it does not complete now, that is the machine
+            // and not the probe, and nothing can be said about what is stable.
+            (c.Status, c.Detail) = ("cannot-run-on-old", "The second run on the old code did not complete, so stable and unstable cases could not be told apart. " + onOldAgain.Detail.Split('\n')[0]);
+            return;
+        }
+
+        var sorted = Sort(first, second, head, this.change, errorLines: c.Purpose == "sweep");
         if (sorted.Stable.Count < MinCases)
         {
             (c.Status, c.Detail) = ("rejected-no-effect", $"Only {sorted.Stable.Count} case(s) gave the same value in two runs of the old code; {sorted.Unstable} changed from one run to the next. Record values that do not depend on time, order, random data or machine paths.");
@@ -542,9 +784,13 @@ public sealed partial class Comparer(ModelSession session)
         Directory.CreateDirectory(dir);
         var output = Path.Combine(dir, label + ".tsv");
         File.Delete(output);
-        var files = new[] { ("AyaProbe.cs", Helper.Replace("__OUT__", output.Replace("\"", "\"\""))), (c.Request + ".cs", code) };
+        var helper = Helper.Replace("__OUT__", output.Replace("\"", "\"\"")).Replace("__IN__", (c.InputsFile ?? string.Empty).Replace("\"", "\"\""));
+        var files = new[] { ("AyaProbe.cs", helper), (c.Request + ".cs", code) };
+
+        // A sweep runs every input in one test, so it gets the time a whole test project would.
+        var limit = c.InputsFile is null ? RunLimitMs : 3 * RunLimitMs;
         var run = Candidates.With(worktree, c.TestProject!, files, () =>
-            TestRunner.Run(worktree, c.TestProject!, w.RunsDir, Path.Combine("probes", label), [$"Aya{c.Request}Probe"], coverage, w.SdkFolder, RunLimitMs));
+            TestRunner.Run(worktree, c.TestProject!, w.RunsDir, Path.Combine("probes", label), [$"Aya{c.Request}Probe"], coverage, w.SdkFolder, limit));
         return (run, Read(output, worktree));
     }
 
@@ -583,12 +829,25 @@ public sealed partial class Comparer(ModelSession session)
 
     private static string Neutral(string value, string worktree)
     {
-        foreach (var form in new[] { worktree, worktree.Replace('\\', '/'), worktree.Replace("\\", "\\\\") }.Distinct())
+        // The folder may have been given with either kind of slash, or both; the code under test prints it its own way.
+        var full = Path.GetFullPath(worktree);
+        foreach (var form in new[] { worktree, full, full.Replace('\\', '/'), full.Replace("\\", "\\\\"), worktree.Replace('\\', '/'), worktree.Replace("\\", "\\\\") }.Distinct().OrderByDescending(f => f.Length))
         {
             value = value.Replace(form, "<repo>", StringComparison.OrdinalIgnoreCase);
         }
 
-        return value;
+        // A stack trace names the line an exception came from. The change moves lines, so the same failure
+        // would read differently on the two versions without anything having changed.
+        value = LineNumber().Replace(value, ":line N");
+
+        // The frames of a stack trace say how a failure got where it did, not what a caller sees, and they change
+        // with any edit: the compiler renumbers the lambdas and local functions of a method when one is added.
+        // The kind of failure and its message stay; the frames go.
+        value = StackFrame().Replace(value, string.Empty);
+
+        // An assembly's version is stamped by the build from the commit it was built at, so the old and the new
+        // code never agree on it. A message that names an assembly would differ without anything having changed.
+        return AssemblyVersion().Replace(value, "Version=N");
     }
 
     private static string Unescape(string text)
@@ -608,6 +867,32 @@ public sealed partial class Comparer(ModelSession session)
         }
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// The names of the types and members the change added, long enough not to collide with ordinary words. An
+    /// attribute is also known by its name without the suffix.
+    /// </summary>
+    public static List<string> Introduced(ReviewResult result)
+    {
+        var names = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var c in result.ChangedSymbols.Where(c => !c.IsTest && c.ChangeKind == "added"))
+        {
+            var paren = c.Display.IndexOf('(');
+            var name = (paren > 0 ? c.Display[..paren] : c.Display).Split('.').Last();
+            if (name.Length < 8)
+            {
+                continue;
+            }
+
+            names.Add(name);
+            if (name.EndsWith("Attribute", StringComparison.Ordinal) && name.Length > 17)
+            {
+                names.Add(name[..^9]);
+            }
+        }
+
+        return names.ToList();
     }
 
     private static string BuildPrompt(Workbench w, CodeGraph graph, Comparison request, Node pattern, HashSet<int> marked)
@@ -664,6 +949,8 @@ public sealed partial class Comparer(ModelSession session)
         sb.AppendLine("- Record what a caller can observe: returned values, generated text, reported diagnostics with their id, message and position.");
         sb.AppendLine("- Strings and collections are recorded in full. Other objects are recorded through ToString(), so turn them into text that shows what matters.");
         sb.AppendLine("- Record at least 8 cases over different inputs: ordinary ones, edge cases, and inputs that drive execution through the code shown above.");
+        sb.AppendLine("- Every input must be one the OLD version already handled. The comparison is about behaviour that existed before the change, so an");
+        sb.AppendLine("  input that uses something the change added says nothing." + (request.Introduced.Count > 0 ? " The change introduced these names; your file must not contain any of them: " + string.Join(", ", request.Introduced.Take(30)) + "." : string.Empty));
         sb.AppendLine("- Never assert, and never let an exception escape a Record call: the probe must pass on both versions.");
         sb.AppendLine("- Recorded values must not depend on time, random data, ordering of unordered collections or machine paths.");
         sb.AppendLine();
@@ -679,7 +966,7 @@ public sealed partial class Comparer(ModelSession session)
     }
 
     /// <summary>The parts of the file's diff that touch the given lines of the new version.</summary>
-    private static string Hunks(Workbench w, string file, int start, int end)
+    public static string Hunks(Workbench w, string file, int start, int end)
     {
         var diff = w.Git.Try("diff", "-U4", "--no-color", w.BaseSha, w.HeadSha, "--", file);
         if (!diff.Ok)
@@ -709,4 +996,13 @@ public sealed partial class Comparer(ModelSession session)
 
     [GeneratedRegex(@"^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@")]
     private static partial Regex HunkHeader();
+
+    [GeneratedRegex(@":line \d+")]
+    private static partial Regex LineNumber();
+
+    [GeneratedRegex(@"^[ \t]+at [^\n(]+\([^\n]*\)(?: in [^\n]+)?[ \t]*\n?", RegexOptions.Multiline)]
+    private static partial Regex StackFrame();
+
+    [GeneratedRegex(@"Version=\d+(\.\d+){1,3}")]
+    private static partial Regex AssemblyVersion();
 }

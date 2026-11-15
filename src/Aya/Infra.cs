@@ -13,6 +13,29 @@ public sealed record ProcResult(int ExitCode, string StdOut, string StdErr)
     public string All => StdErr.Length > 0 ? StdOut + "\n" + StdErr : StdOut;
 }
 
+/// <summary>
+/// File operations that put a working copy back as it was. Right after a process is killed its files can still
+/// be held for a moment, and giving up at the first refusal would leave the copy altered.
+/// </summary>
+public static class Files
+{
+    public static void Retry(Action action)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                action();
+                return;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && attempt < 10)
+            {
+                Thread.Sleep(300);
+            }
+        }
+    }
+}
+
 public static class Proc
 {
     public static ProcResult Run(string file, IEnumerable<string> args, string? cwd = null, int timeoutMs = 30 * 60 * 1000, string? stdin = null)
@@ -20,7 +43,7 @@ public static class Proc
         var psi = new ProcessStartInfo(file)
         {
             WorkingDirectory = cwd ?? Environment.CurrentDirectory,
-            RedirectStandardInput = stdin is not null,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
@@ -49,21 +72,32 @@ public static class Proc
 
         using (process)
         {
-            if (stdin is not null)
-            {
-                // Written as UTF-8 bytes so the text survives whatever code page the console uses.
-                using var input = process.StandardInput.BaseStream;
-                var bytes = Encoding.UTF8.GetBytes(stdin);
-                input.Write(bytes, 0, bytes.Length);
-            }
-
+            // The output is read from the start, so a child that writes a lot before reading its input cannot
+            // fill a pipe and stall both sides.
             var stdout = process.StandardOutput.ReadToEndAsync();
             var stderr = process.StandardError.ReadToEndAsync();
+            try
+            {
+                // Written as UTF-8 bytes so the text survives whatever code page the console uses. The input is
+                // always closed, so a child that asks for something gets end-of-file instead of waiting on a console.
+                using var input = process.StandardInput.BaseStream;
+                if (stdin is not null)
+                {
+                    var bytes = Encoding.UTF8.GetBytes(stdin);
+                    input.Write(bytes, 0, bytes.Length);
+                }
+            }
+            catch (IOException)
+            {
+                // The child exited before reading its input. Its exit code and output say why.
+            }
+
             if (!process.WaitForExit(timeoutMs))
             {
                 try
                 {
                     process.Kill(entireProcessTree: true);
+                    process.WaitForExit(5000);
                 }
                 catch (InvalidOperationException)
                 {

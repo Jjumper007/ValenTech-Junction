@@ -28,7 +28,7 @@ public static partial class ReviewCommand
             Next(),
             "impact",
             graph.Warnings.Count > 0 ? "warn" : "info",
-            $"{source.Count} non-test symbols changed across layers {(source.Count > 0 ? $"{source.Min(c => c.Layer)}–{source.Max(c => c.Layer)}" : "n/a")}; {source.Sum(c => c.Dependents)} dependent members and {source.Count(c => c.PublicApi)} public API symbols touched",
+            $"{source.Count} non-test symbols changed across layers {(source.Count > 0 ? $"{source.Min(c => c.Layer)}–{source.Max(c => c.Layer)}" : "n/a")}; the most depended-on has {(source.Count > 0 ? source.Max(c => c.Dependents) : 0)} dependent member(s); {source.Count(c => c.PublicApi)} public API symbols touched",
             $"Roslyn semantic model over {graph.Projects.Count} projects ({graph.Nodes.Count} nodes, {graph.Edges.Count} edges)",
             graph.Warnings.Count > 0 ? $"{graph.Warnings.Count} loader warnings: the graph may be missing edges" : null));
 
@@ -174,13 +174,35 @@ public static partial class ReviewCommand
             list.Add(new Evidence(
                 Next(),
                 "mutation",
-                survived > 0 || inconclusive > 0 ? "warn" : caught > 0 ? "pass" : "warn",
+                // "pass" says every break that could be made was tried and caught. Breaks left untried, or on lines
+                // no test executes, are not that.
+                survived > 0 || inconclusive > 0 || blind > 0 || skipped > 0 ? "warn" : caught > 0 ? "pass" : "warn",
                 $"{caught} of {caught + survived} deliberate breaks of changed lines were caught by a test; {survived} went unnoticed" +
                 (inconclusive > 0 ? $"; {inconclusive} hung or crashed the test run and are inconclusive" : string.Empty) +
                 (blind > 0 ? $"; {blind} more are on lines no test executes" : string.Empty) +
                 (skipped > 0 ? $"; {skipped} were not tried (budget)" : string.Empty),
                 "each changed line altered in turn, then dotnet test (mutation testing)",
                 survived > 0 ? string.Join("\n", result.Mutants.Where(m => m.Status == "survived").Take(12).Select(m => $"{m.File}:{m.Line}  {m.Description}  in  {m.Original}")) : null));
+        }
+
+        if (result.Reverts.Count > 0)
+        {
+            var needed = result.Reverts.Where(v => v.Status == "needed").ToList();
+            var idle = result.Reverts.Where(v => v.Status == "not-needed").ToList();
+            var ownOnly = needed.Count(v => v.NeededByOldTests == 0);
+            var bound = result.Reverts.Count(v => v.Status == "cannot-be-undone-alone");
+            var unsure = result.Reverts.Count - needed.Count - idle.Count - bound;
+            list.Add(new Evidence(
+                Next(),
+                "revert",
+                idle.Count > 0 || unsure > 0 ? "warn" : needed.Count > 0 ? "pass" : "info",
+                $"{result.Reverts.Count} part(s) of the change were put back as they were, one at a time: {needed.Count} are needed by at least one test" +
+                (ownOnly > 0 ? $" ({ownOnly} only by tests that came with the change)" : string.Empty) +
+                $", {idle.Count} can be undone with every test still passing" +
+                (bound > 0 ? $", {bound} do not compile without the rest of the change" : string.Empty) +
+                (unsure > 0 ? $", {unsure} hung or crashed the test run and are inconclusive" : string.Empty),
+                "the old lines of one part restored in the new code, then dotnet test",
+                idle.Count > 0 ? string.Join("\n", idle.Select(v => $"{v.File}:{v.Start}–{v.End}  no test fails with the old lines back")) : null));
         }
 
         if (result.ProposedTests.Count > 0)
@@ -193,7 +215,8 @@ public static partial class ReviewCommand
                 Next(),
                 "written-tests",
                 "info",
-                $"{accepted.Count} of {asked} tests written by {result.TestWriter} were accepted: they compile, pass, and now execute {accepted.Sum(t => t.CoversLines.Count)} previously unexecuted line(s) and catch {closed} of {tried.Count(t => t.Reason == "unnoticed-break")} previously unnoticed break(s)",
+                $"{accepted.Count} of {asked} tests written by {result.TestWriter} were accepted: they compile, pass, and now execute {accepted.Sum(t => t.CoversLines.Count)} previously unexecuted line(s) and catch {closed} of the {result.Mutants.Count(m => m.Status == "survived")} unnoticed break(s)" +
+                (result.ProposedTests.Count(t => t.Status == "not-attempted") is var left and > 0 ? $"; {left} gap(s) were not asked for (budget)" : string.Empty),
                 $"{result.TestWriter} wrote them; dotnet test and coverage checked each one, and each accepted test was run against every other unnoticed break",
                 tried.Count > accepted.Count ? string.Join("\n", tried.Where(t => t.Status != "accepted").Select(t => $"{t.Request}: {t.Status} — {t.Detail}")) : null));
         }
@@ -207,7 +230,7 @@ public static partial class ReviewCommand
             list.Add(new Evidence(
                 Next(),
                 "old-vs-new",
-                broke > 0 ? "fail" : differ > 0 || compared.Count < probed.Count ? "warn" : compared.Count > 0 ? "pass" : "warn",
+                broke > 0 ? "fail" : differ > 0 || compared.Count < probed.Count ? "warn" : compared.Sum(p => p.Cases) > 0 ? "pass" : "warn",
                 $"{compared.Count} of {probed.Count} modified unit(s) were run on the old and the new code with the same {compared.Sum(p => p.Cases)} input(s): " +
                 $"{compared.Sum(p => p.Same)} give the same result, {differ} differ" +
                 (differ > 0 ? " (" + string.Join(", ", compared.SelectMany(p => p.Differences).GroupBy(d => d.Kind).Select(g => $"{g.Count()} {g.Key}")) + ")" : string.Empty) +
@@ -216,7 +239,8 @@ public static partial class ReviewCommand
                 compared.Count < probed.Count ? string.Join("\n", probed.Where(p => p.Status != "compared").Select(p => $"{p.Request} {p.Symbol}: {p.Status} — {p.Detail.Split('\n')[0]}")) : null));
         }
 
-        var attacked = result.Attacks.Where(a => a.Attempts > 0).ToList();
+        var attacked = result.Attacks.Where(a => a.Attempts > 0 && a.Kept is null).ToList();
+        var keptTests = result.Attacks.Where(a => a.Kept is not null).ToList();
         if (attacked.Count > 0)
         {
             var regressions = attacked.Count(a => a.Status == "regression-demonstrated");
@@ -225,13 +249,71 @@ public static partial class ReviewCommand
             list.Add(new Evidence(
                 Next(),
                 "attack",
-                regressions > 0 ? "fail" : open > 0 || judged < attacked.Count ? "warn" : "info",
+                regressions > 0 || keptTests.Any(a => a.Status == "regression-demonstrated") ? "fail" : open > 0 || judged < attacked.Count ? "warn" : "info",
                 (judged < attacked.Count ? $"for {attacked.Count - judged} of {attacked.Count} unit(s) the model produced no test that could be run; " : string.Empty) +
                 $"{judged} unit(s) were attacked with tests written to break them: {attacked.Count(a => a.Status == "resisted")} resisted " +
                 $"({attacked.Where(a => a.Status == "resisted").Sum(a => a.Tests)} tests), {regressions} with a demonstrated regression, {open} with a failing test nothing can arbitrate, " +
-                $"{attacked.Count(a => a.Status == "fails-on-both")} failing on the old code too",
+                $"{attacked.Count(a => a.Status == "fails-on-both")} failing on the old code too" +
+                (keptTests.Count > 0 ? $". {keptTests.Count} test(s) kept from earlier runs because they showed a regression were run again: {keptTests.Count(a => a.Status == "regression-demonstrated")} still fail on the new code and pass on the old" : string.Empty),
                 $"tests written by {result.AttackWriter}; each file is built and run here, and a failing test is run on the old code, which decides whether the change caused it",
                 string.Join("\n", attacked.Where(a => a.Status != "resisted").Select(a => $"{a.Request} {a.Symbol}: {a.Status} — {a.Detail}")) is { Length: > 0 } detail ? detail : null));
+        }
+
+        if (result.Sweep is { } sweep)
+        {
+            var run = result.Comparisons.FirstOrDefault(p => p.Purpose == "sweep" && p.Status == "compared");
+            var failing = run?.Count("now-fails") ?? 0;
+            var explained = run?.Differences.Count(d => d.ByChange == "explained") ?? 0;
+            list.Add(new Evidence(
+                Next(),
+                "sweep",
+                // "Pass" would say the old behaviour was checked. It is said only when the inputs drove most of the
+                // change; inputs that barely touch it agreeing with each other is information, not a check passed.
+                run is null ? "warn" : failing > 0 ? "fail" : run.Differences.Count > explained || sweep.NewFindings.Count > 0 || sweep.Notes.Count > 0 ? "warn"
+                    : run.Cases > 0 && sweep.ChangedLinesExecuted * 2 >= sweep.ChangedLines ? "pass" : "info",
+                run is null
+                    ? $"a sweep over inputs nobody chose could not be run: {(sweep.TestProject is null ? sweep.Detail : sweep.Status + " — " + sweep.Detail.Split('\n')[0])}"
+                    : $"{run.Cases} input(s) nobody chose ({sweep.FromTests} taken from the existing tests, {sweep.Altered} altered mechanically) were run on the old and the new code: " +
+                      $"{run.Same} give the same result, {run.Differences.Count} differ" +
+                      (run.Differences.Count > 0 ? " (" + string.Join(", ", run.Differences.GroupBy(d => d.Kind).Select(g => $"{g.Count()} {g.Key}")) + ")" : string.Empty) +
+                      (failing > 0 ? $"; {failing} input(s) that worked on the old code do not work on the new" : string.Empty) +
+                      (sweep.OnlyWhenAltered > 0 ? $"; {sweep.OnlyWhenAltered} difference(s) show only once the input is altered" : string.Empty) +
+                      (explained > 0 ? $"; {explained} differ only by lines the change itself adds or removes" : string.Empty) +
+                      $". The inputs drove {sweep.ChangedLinesExecuted} of the change's {sweep.ChangedLines} executable line(s)" +
+                      (sweep.ChangedLinesExecuted * 2 < sweep.ChangedLines ? ", less than half: what they do not reach, they say nothing about" : string.Empty) +
+                      (sweep.NewInputs > 0 ? $". {sweep.NewInputs} input(s) that came with the change were run on the new code alone: {sweep.NewFindings.Count(f => f.Kind == "crash")} make the code under test crash, {sweep.NewFindings.Count(f => f.Kind == "silently-broken")} get output that does not compile with no error reported" : string.Empty) +
+                      (sweep.Notes.Count > 0 ? ". " + string.Join(". ", sweep.Notes) : string.Empty),
+                $"inputs built by AYA from the tests of {sweep.TestProject ?? "no project"}, with no model involved; the harness that feeds them was written by {result.TestWriter} and run twice on the old code and once on the new",
+                sweep.Alterations.Count > 0 ? string.Join("\n", sweep.Alterations.Select(a => $"{a.Inputs} input(s): {a.Label}" + (a.FromChange ? " (taken from the change)" : string.Empty))) : null));
+        }
+
+        if (result.Judge is { Groups: > 0 } judge)
+        {
+            list.Add(new Evidence(
+                Next(),
+                "judge",
+                "info",
+                $"OPINION, not a measurement. {judge.Writer} was asked whether {judge.Groups} group(s) of differences the change's own text does not explain were meant: " +
+                $"it reads {judge.Intended} as what the change set out to do, {judge.NotIntended} as not meant, {judge.Artefact} as artefacts of the build or the run and {judge.Unclear} as unclear" +
+                (judge.QuoteNotFound > 0 ? $"; {judge.QuoteNotFound} reading(s) of \"intended\" were discarded because the words quoted for them are not in what the change says it is for" : string.Empty) +
+                (judge.Unanswered > 0 ? $"; {judge.Unanswered} got no reading" : string.Empty),
+                $"{judge.Sessions} session(s); it was given {string.Join(", ", judge.Material)}. A reading moves nothing down the list",
+                null));
+        }
+
+        if (result.Obligations.Count > 0)
+        {
+            var shown = result.Obligations.Count(o => o.Status == "demonstrated");
+            var against = result.Obligations.Count(o => o.Status == "contradicted");
+            list.Add(new Evidence(
+                Next(),
+                "requirement",
+                against > 0 || shown < result.Obligations.Count ? "warn" : "info",
+                $"OPINION, bounded by measurements. A model read {result.Obligations.Count} thing(s) the requirement asks for: {shown} are shown by a test that fails without the change, " +
+                $"{result.Obligations.Count(o => o.Status == "not-demonstrated")} the change appears to do with no such test, {result.Obligations.Count(o => o.Status == "not-addressed")} it does not address" +
+                (against > 0 ? $", and in {against} the change does less than, or something other than, what is asked" : string.Empty),
+                "the words of each thing asked for were checked to be in the requirement, and a test named as showing one was checked to be a test that fails on the old code; the reading itself is the model's",
+                string.Join("\n", result.Obligations.Where(o => o.Status != "demonstrated").Select(o => $"{o.Status}: \"{o.Asks}\" — {o.Reason}")) is { Length: > 0 } rest ? rest : null));
         }
 
         if (result.Exhaustive is { } deep)

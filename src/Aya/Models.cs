@@ -83,6 +83,18 @@ public sealed record Evidence(string Id, string Kind, string Status, string Clai
 
 public sealed record Finding(string Topic, string Text);
 
+/// <summary>
+/// One thing the requirement asks for, in its own words, and a model's reading of whether a test shows it.
+/// demonstrated (a test that fails on the old code, named) | not-demonstrated | not-addressed | contradicted.
+/// </summary>
+public sealed record Obligation(string Asks, string Status, string Test, string Reason);
+
+/// <summary>
+/// One part of the change put back as it was, and what the tests said. needed: a test fails without it.
+/// not-needed: every test still passes. cannot-be-undone-alone: it does not compile without the rest.
+/// </summary>
+public sealed record Revert(string Id, string File, int Start, int End, string Status, List<string> NeededBy, int NeededByCount, int NeededByOldTests);
+
 public sealed record RunSummary(string Label, string Project, bool Built, int Passed, int Failed, int Skipped, int Total, double Seconds, List<string> BuildErrors, string? Problem);
 
 public sealed class ReviewResult
@@ -94,6 +106,9 @@ public sealed class ReviewResult
     public required string Repo { get; init; }
 
     public string? Requirement { get; init; }
+
+    /// <summary>The text of the requirement, when the owner supplied it (--req-file). AYA does not fetch it.</summary>
+    public string? RequirementText { get; init; }
 
     public required string BaseSha { get; init; }
 
@@ -148,6 +163,11 @@ public sealed class ReviewResult
 
     public List<Mutant> Mutants { get; set; } = new();
 
+    public List<Revert> Reverts { get; set; } = new();
+
+    /// <summary>A model's reading of the requirement against the tests. Opinions, bounded by what was measured.</summary>
+    public List<Obligation> Obligations { get; set; } = new();
+
     public List<ProposedTest> ProposedTests { get; set; } = new();
 
     /// <summary>Who wrote the proposed tests, e.g. "claude-opus-5-5 (effort medium)". Null when none were asked for.</summary>
@@ -165,4 +185,10 @@ public sealed class ReviewResult
     public string? AttackWriter { get; set; }
 
     public ExhaustiveSummary? Exhaustive { get; set; }
+
+    /// <summary>Inputs built without a model, run on the old and the new code. Its comparison is in Comparisons, purpose "sweep".</summary>
+    public SweepResult? Sweep { get; set; }
+
+    /// <summary>A model's reading of which unexplained differences were meant. Opinions, counted.</summary>
+    public JudgeSummary? Judge { get; set; }
 }

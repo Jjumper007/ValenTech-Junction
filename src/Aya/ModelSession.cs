@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Aya;
@@ -7,8 +8,23 @@ namespace Aya;
 /// Fresh, tool-less model sessions that write code on request. Nothing a session writes is believed: the callers
 /// build it, run it and measure what it does. This class only asks, and refuses code that games those checks.
 /// </summary>
-public sealed partial class ModelSession(string model, string effort)
+public sealed partial class ModelSession(string provider, string model, string effort)
 {
+    /// <summary>Sessions run at the same time. More than this and the provider starts slowing every one of them.</summary>
+    private const int AtOnce = 8;
+
+    /// <summary>
+    /// Put before every request sent through the Antigravity command line, which would otherwise act as an
+    /// agent and go and read files. A session is given its whole module in the request and nothing else.
+    /// </summary>
+    private const string NoTools =
+        "Answer directly with the code. Do not use any tool, do not read or search any file and do not ask anything: " +
+        "everything you need is in this message, and nothing outside it is yours to look at.\n\n";
+
+    private int sessions;
+    private int fallbacks;
+    private volatile bool quotaSpent;
+
     /// <summary>
     /// Ways of forcing a state the program cannot reach by itself. A test that needs one of them to tell two
     /// versions apart is telling apart something no caller could ever observe.
@@ -19,33 +35,115 @@ public sealed partial class ModelSession(string model, string effort)
         "TypeBuilder", "DynamicMethod", "ILGenerator",
     ];
 
-    public string Name => $"{model} (effort {effort})";
+    public string Name => provider == "gemini" ? $"{model} (Gemini, through the Antigravity command line)" : $"{model} (effort {effort})";
 
     /// <summary>How many sessions were opened, whatever came of them.</summary>
-    public int Sessions { get; private set; }
+    public int Sessions => this.sessions;
 
-    /// <summary>Starts a session with the prompt on standard input and returns the code it wrote.</summary>
+    /// <summary>Starts a session with the request and returns the code it wrote.</summary>
     public string? AskForCode(string prompt, out string error)
     {
-        // A session that dies or hangs says nothing about the request, so it is tried once more before giving up.
-        var code = this.Ask(prompt, out error);
-        return code ?? this.Ask(prompt, out error);
+        // A session that dies, hangs or comes back empty says nothing about the request, so it is tried once more
+        // before giving up. With Gemini the second try goes to Claude: waiting twice on the same slow answer
+        // would only double the wait.
+        // Once the provider has said its quota is spent, asking it again only costs time: every later request of
+        // this run goes straight to Claude.
+        if (provider == "gemini" && this.quotaSpent)
+        {
+            Interlocked.Increment(ref this.fallbacks);
+            return this.Ask(prompt, "claude", out error);
+        }
+
+        var code = this.Ask(prompt, provider, out error);
+        if (code is not null)
+        {
+            return code;
+        }
+
+        if (provider == "gemini")
+        {
+            Interlocked.Increment(ref this.fallbacks);
+            return this.Ask(prompt, "claude", out error);
+        }
+
+        return this.Ask(prompt, provider, out error);
     }
 
-    private string? Ask(string prompt, out string error)
+    /// <summary>Sessions that Gemini did not answer and Claude was asked instead.</summary>
+    public int Fallbacks => this.fallbacks;
+
+    /// <summary>The provider refused a request because its quota is spent. That is not a slow answer, and it is said apart.</summary>
+    public bool QuotaSpent => this.quotaSpent;
+
+    /// <summary>
+    /// One session per request, all at the same time. Each session knows only its own request: that is the
+    /// module it works in, and it cannot see the others. The answers come back in the order of the requests.
+    /// </summary>
+    public (string? Code, string Error)[] AskAll(IReadOnlyList<string> prompts)
     {
-        this.Sessions++;
+        var answers = new (string? Code, string Error)[prompts.Count];
+        Parallel.For(0, prompts.Count, new ParallelOptions { MaxDegreeOfParallelism = AtOnce }, i =>
+        {
+            // Whatever goes wrong with one session is that request's failure and nobody else's.
+            try
+            {
+                var code = this.AskForCode(prompts[i], out var error);
+                answers[i] = (code, error);
+            }
+            catch (Exception ex)
+            {
+                answers[i] = (null, ex.Message);
+            }
+        });
+        return answers;
+    }
+
+    private string? Ask(string prompt, string via, out string error)
+    {
+        Interlocked.Increment(ref this.sessions);
         var cwd = Path.Combine(Paths.AyaHome, "model-cwd");
         Directory.CreateDirectory(cwd);
-        ProcResult answer;
+        string text;
         try
         {
-            answer = Proc.Run(
-                "claude",
-                ["-p", "--model", model, "--effort", effort, "--tools", string.Empty, "--strict-mcp-config", "--no-session-persistence", "--output-format", "text"],
-                cwd,
-                6 * 60 * 1000,
-                prompt);
+            if (via == "gemini")
+            {
+                // The request goes in as one JSON line on standard input, so its length and quotes never meet a shell.
+                // An answer normally takes under a minute; past two, the session is given up on.
+                var line = JsonSerializer.Serialize(new { @event = "user", message = new { content = NoTools + prompt } }) + "\n";
+                var run = Proc.Run(Antigravity(), ["--input-format", "stream-json", "--output-format", "stream-json", "--model", model, "--print-timeout", "2m"], cwd, 150 * 1000, line);
+                var (status, response) = LastResult(run.StdOut);
+                if (!run.Ok || status != "SUCCESS" || response.Trim().Length == 0)
+                {
+                    if (run.StdOut.Contains("RESOURCE_EXHAUSTED", StringComparison.Ordinal) || run.StdErr.Contains("RESOURCE_EXHAUSTED", StringComparison.Ordinal))
+                    {
+                        this.quotaSpent = true;
+                        error = $"the quota of {model} is spent";
+                        return null;
+                    }
+
+                    error = run.ExitCode == -1 ? "timed out" : $"exit code {run.ExitCode}, status {(status.Length > 0 ? status : "unknown")}" + (response.Trim().Length == 0 ? ", empty answer" : string.Empty);
+                    return null;
+                }
+
+                text = response;
+            }
+            else
+            {
+                var run = Proc.Run(
+                    "claude",
+                    ["-p", "--model", via == provider ? model : "claude-opus-5-5", "--effort", effort, "--tools", string.Empty, "--strict-mcp-config", "--no-session-persistence", "--output-format", "text"],
+                    cwd,
+                    6 * 60 * 1000,
+                    prompt);
+                if (!run.Ok || run.StdOut.Trim().Length == 0)
+                {
+                    error = run.ExitCode == -1 ? "timed out" : $"exit code {run.ExitCode}: {run.StdErr.Trim().Split('\n').FirstOrDefault()}";
+                    return null;
+                }
+
+                text = run.StdOut;
+            }
         }
         catch (AyaException ex)
         {
@@ -53,15 +151,44 @@ public sealed partial class ModelSession(string model, string effort)
             return null;
         }
 
-        if (!answer.Ok || answer.StdOut.Trim().Length == 0)
+        error = string.Empty;
+        var blocks = CodeBlock().Matches(text).Select(m => m.Groups[1].Value).ToList();
+        return blocks.Count > 0 ? blocks.MaxBy(b => b.Length) : text;
+    }
+
+    /// <summary>The status and the answer in the last result event of an Antigravity event stream.</summary>
+    public static (string Status, string Response) LastResult(string stream)
+    {
+        var (status, response) = (string.Empty, string.Empty);
+        foreach (var raw in stream.Split('\n'))
         {
-            error = answer.ExitCode == -1 ? "timed out" : $"exit code {answer.ExitCode}: {answer.StdErr.Trim().Split('\n').FirstOrDefault()}";
-            return null;
+            if (!raw.Contains("\"result\"", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            try
+            {
+                using var doc = JsonDocument.Parse(raw);
+                if (doc.RootElement.TryGetProperty("result", out var result))
+                {
+                    status = result.TryGetProperty("status", out var s) ? s.GetString() ?? string.Empty : string.Empty;
+                    response = result.TryGetProperty("response", out var r) ? r.GetString() ?? string.Empty : string.Empty;
+                }
+            }
+            catch (JsonException)
+            {
+                // Not an event line.
+            }
         }
 
-        error = string.Empty;
-        var blocks = CodeBlock().Matches(answer.StdOut).Select(m => m.Groups[1].Value).ToList();
-        return blocks.Count > 0 ? blocks.MaxBy(b => b.Length) : answer.StdOut;
+        return (status, response);
+    }
+
+    private static string Antigravity()
+    {
+        var local = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "agy", "bin", OperatingSystem.IsWindows() ? "agy.exe" : "agy");
+        return File.Exists(local) ? local : "agy";
     }
 
     /// <summary>The first forbidden construct the code uses, or null when it uses none.</summary>
@@ -173,9 +300,10 @@ public static class Candidates
         }
         finally
         {
+            // Each file on its own: one that cannot be removed yet must not leave the others behind.
             foreach (var path in written)
             {
-                File.Delete(path);
+                Files.Retry(() => File.Delete(path));
             }
 
             if (Directory.Exists(dir) && !Directory.EnumerateFileSystemEntries(dir).Any())

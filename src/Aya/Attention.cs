@@ -28,6 +28,10 @@ public sealed class AttentionItem
 
     public int Dependents { get; init; }
 
+    /// <summary>Inside a tier: what nothing explains, or a model doubts, goes before what the change's own text explains.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public int Urgency { get; set; }
+
     /// <summary>Why it is in this tier.</summary>
     public List<string> Why { get; } = new();
 
@@ -68,7 +72,7 @@ public static class Attention
     public static readonly string[] TierNames =
     [
         string.Empty,
-        "Breaks something that worked: demonstrated",
+        "A check that passed on the old code fails on the new",
         "Changes a result that existed before",
         "Existing code others depend on, where a mistake would go unnoticed",
         "Could not be measured",
@@ -80,10 +84,12 @@ public static class Attention
         "Tier 1: an existing test now fails because of it, an input that gave a result now fails, or a test written to break it " +
         "fails on the new code and passes on the old. Tier 2: an input gives a different result than on the old code. " +
         "Tier 3: it modifies code that existed, other code depends on it, and a line is never executed or can be broken without " +
-        "any test failing. Tier 4: the analysis could not measure it (deleted code, declarations, no break could be tried, " +
+        "any test failing. Tier 4: the analysis could not measure it (deleted code, modified declarations, no break could be tried, " +
         "generated or conditionally compiled code, a failing test nothing can arbitrate). Tier 5: a line is never executed or can be " +
-        "broken unnoticed, in code nothing else depends on or that is new. Tier 6: none of the above was found. Inside a tier, the " +
-        "unit with more code depending on it comes first.";
+        "broken unnoticed, in code nothing else depends on or that is new; or tests that came with the change were not shown to " +
+        "fail without it. Tier 6: none of the above was found. Inside a tier, a difference the change's own text does not " +
+        "explain, or that a model reads as not meant, comes before one made only of lines the change adds or removes; then the " +
+        "unit with more code depending on it comes first. A model's reading can only move an item up.";
 
     /// <summary>The fixed ordering rule.</summary>
     public static int Tier(Signals s) =>
@@ -109,22 +115,36 @@ public static class Attention
             var attacks = result.Attacks.Where(a => a.SymbolId == c.Id).ToList();
             var judged = c.Mutants.Where(m => m.Status is "killed" or "survived").ToList();
             var unnoticed = c.Mutants.Where(m => m.Status == "survived").ToList();
+            var undone = result.Reverts.Where(v => v.File == c.File && c.ChangedLines.Any(l => l >= v.Start && l <= v.End)).ToList();
+            var idle = undone.Where(v => v.Status == "not-needed").ToList();
             var executable = c.CoveredLines.Count + c.UncoveredLines.Count;
             var brokenTests = c.FailingTests.Where(regressed.Contains).ToList();
             var nowFails = compared.Sum(p => p.Count("now-fails"));
             var changedResults = compared.Sum(p => p.Count("changed") + p.Count("fails-differently") + p.Count("missing-on-new"));
+
+            // Of those, the ones made only of text the change itself adds or removes. They are the change showing
+            // through, so the ones nothing explains come first; a model calling one unintended puts it first too.
+            var shownThrough = compared.Sum(p => p.Differences.Count(d => d.ByChange == "explained"));
+            var unexplained = changedResults - shownThrough;
+            var doubted = compared.Sum(p => p.Differences.Count(d => d.Judgement?.Verdict == "not-intended"));
+            var believed = compared.Sum(p => p.Differences.Count(d => d.Judgement?.Verdict == "intended"));
             var regressions = attacks.Where(a => a.Status == "regression-demonstrated").ToList();
             var blind = BlindSpots(c, files, headWorktree, sources);
             var noBreakTried = mutationRan && executable > 0 && judged.Count == 0;
             var undeclared = c.Status == "not-measured";
+
+            // A declaration the change added has nothing to execute and nothing it could have broken: no measurement
+            // applies to it, which is not the same as a measurement that failed. It stays in the list, at the end.
+            var allRan = result.Runs.Any(r => r.Label == "head") && result.Runs.Where(r => r.Label == "head").All(r => r.Problem is null);
+            var newDeclaration = undeclared && c.ChangeKind == "added" && allRan && c.Kind is "field" or "type" or "property" or "event";
 
             var signals = new Signals(
                 ModifiedExisting: c.ChangeKind == "modified",
                 Dependents: c.Dependents,
                 BreakDemonstrated: brokenTests.Count > 0 || nowFails > 0 || regressions.Count > 0,
                 ResultChanged: changedResults > 0,
-                DetectionGap: c.UncoveredLines.Count > 0 || unnoticed.Count > 0,
-                NotMeasured: undeclared || noBreakTried,
+                DetectionGap: c.UncoveredLines.Count > 0 || unnoticed.Count > 0 || idle.Count > 0,
+                NotMeasured: (undeclared && !newDeclaration) || noBreakTried,
                 PossibleDefect: attacks.Any(a => a.Status == "possible-defect"),
                 Blind: blind.Count > 0);
             var tier = Tier(signals);
@@ -152,24 +172,48 @@ public static class Attention
 
             foreach (var a in regressions)
             {
-                item.Why.Add($"a test written to break it fails on the new code and passes on the old ({a.TestFile})");
+                item.Why.Add($"a test written to break it fails on the new code and passes on the old ({a.TestFile}" + (a.Kept is null ? ")" : $", kept from the run of {a.Kept} and run again now)"));
             }
 
-            if (changedResults > 0)
+            if (unexplained > 0)
             {
-                item.Why.Add($"{changedResults} input(s) give a different result than on the old code");
+                item.Why.Add($"{unexplained} input(s) give a different result than on the old code, and the change's own text does not explain it");
             }
+
+            if (doubted > 0)
+            {
+                item.Why.Add($"a model reads {doubted} of those differences as not what the change set out to do (its opinion, not a measurement)");
+            }
+
+            if (shownThrough > 0)
+            {
+                item.Why.Add($"{shownThrough} input(s) differ only by lines the change itself adds or removes: the change showing through, which is not the same as correct");
+            }
+
+            if (believed > 0)
+            {
+                item.Why.Add($"a model reads {believed} difference(s) as the new functionality (its opinion; they keep their place)");
+            }
+
+            if (compared.Sum(p => p.Differences.Count(d => d.Judgement?.Verdict == "artefact")) is var artefacts and > 0)
+            {
+                item.Why.Add($"a model reads {artefacts} difference(s) as artefacts of the build or the run, not behaviour (its opinion; they keep their place)");
+            }
+
+            item.Urgency = (unexplained > 0 ? 2 : 0) + (doubted > 0 ? 1 : 0);
 
             if (tier == 3)
             {
                 item.Why.Add($"it modifies code that existed, {c.Dependents} member(s) depend on it, and a mistake in it would go unnoticed");
             }
 
-            if (undeclared)
+            if (undeclared && !newDeclaration)
             {
-                item.Why.Add(!result.Runs.Any(r => r.Label == "head" && r.Problem is null)
-                    ? "no test run produced results, so nothing was measured about it"
-                    : "a declaration changed: there is no line to execute, so no test run says anything about it");
+                item.Why.Add(!allRan
+                    ? "a test project did not build or did not finish, so nothing was measured about it"
+                    : c.ChangedLines.Count == 0
+                        ? "lines were deleted from it and nothing was put in their place: no test run says anything about what is gone"
+                        : "none of its changed lines is one a test run can execute (a declaration, a signature, a brace or a comment), so no test run says anything about it");
             }
             else if (noBreakTried)
             {
@@ -193,7 +237,9 @@ public static class Attention
 
             if (tier == 6)
             {
-                item.Why.Add("nothing was found against it; that is not a statement that it is correct");
+                item.Why.Add(newDeclaration
+                    ? "a new declaration with nothing to execute: no test run can say anything about it, and nothing was found against it"
+                    : "nothing was found against it; that is not a statement that it is correct");
             }
 
             // How likely it is to be wrong: indications only.
@@ -270,6 +316,17 @@ public static class Attention
                 }
             }
 
+            foreach (var v in undone)
+            {
+                item.Detection.Add(v.Status switch
+                {
+                    "not-needed" => $"lines {v.Start}–{v.End} can be put back as they were and every test still passes: no test needs this part of the change",
+                    "needed" => $"with lines {v.Start}–{v.End} put back as they were, {v.NeededByCount} test(s) fail" + (v.NeededByOldTests == 0 ? ", all of them tests that came with the change" : $", {v.NeededByOldTests} of which existed before"),
+                    "cannot-be-undone-alone" => $"lines {v.Start}–{v.End} could not be undone on their own: the code does not compile without the rest of the change",
+                    _ => $"undoing lines {v.Start}–{v.End} hung or crashed the test run: inconclusive",
+                });
+            }
+
             var inconclusive = c.Mutants.Count(m => m.Status is "timeout" or "crashed");
             if (inconclusive > 0)
             {
@@ -292,12 +349,17 @@ public static class Attention
             // What the person who signs should look at.
             if (brokenTests.Count > 0 || nowFails > 0 || regressions.Count > 0)
             {
-                item.Check.Add("Decide whether each demonstrated break is intended; if not, the change is wrong.");
+                item.Check.Add("Something that held on the old code no longer does. Decide whether that was meant to change; if not, the change is wrong.");
             }
 
             if (changedResults > 0)
             {
                 item.Check.Add("Go through the inputs whose result changed and confirm every change is one the requirement asks for.");
+            }
+
+            foreach (var v in idle.Take(3))
+            {
+                item.Check.Add($"Lines {v.Start}–{v.End}: with the old code back, no test fails. Find out what this part of the change is for, and whether the requirement asks for it.");
             }
 
             foreach (var m in unnoticed.Take(3))
@@ -331,10 +393,13 @@ public static class Attention
         AddDeletions(items, result);
         AddFiles(items, result);
         AddWeakTests(items, result);
+        AddSweep(items, result);
+        AddRequirement(items, result);
 
         var rank = 0;
         var ordered = items
             .OrderBy(i => i.Tier)
+            .ThenByDescending(i => i.Urgency)
             .ThenByDescending(i => i.Dependents)
             .ThenBy(i => i.What, StringComparer.Ordinal)
             .ToList();
@@ -381,8 +446,15 @@ public static class Attention
         {
             grouped.UnionWith(p.Files);
             var exact = p.Variants.Count == 1;
-            var item = Item(exact ? 6 : 4, $"{p.Files.Count} {p.Category} files with a similar edit (e.g. {p.Files[0]})", "similar-files", p.Files[0], null);
-            if (exact)
+            // Being identical does not make an edit harmless: several build files changed the same way are still
+            // files no check covers, exactly as one of them would be.
+            var unchecked_ = p.Category is "build-config" or "template" or "other";
+            var item = Item(exact && !unchecked_ ? 6 : 4, $"{p.Files.Count} {p.Category} files with a similar edit (e.g. {p.Files[0]})", "similar-files", p.Files[0], null);
+            if (exact && unchecked_)
+            {
+                item.Why.Add($"all {p.Files.Count} files received exactly the same edit ({p.Variants[0].EditedLines} line(s)), and no automated check covers this kind of file");
+            }
+            else if (exact)
             {
                 item.Why.Add($"all {p.Files.Count} files received exactly the same edit ({p.Variants[0].EditedLines} line(s)); nothing was found against them");
             }
@@ -421,6 +493,176 @@ public static class Attention
             });
             items.Add(item);
         }
+
+        // A code file whose changed lines belong to no unit: a using directive, a comment between members, an
+        // attribute on the assembly. It would otherwise be the one changed file that appears nowhere.
+        foreach (var f in result.Files.Where(f => f.Status != "D" && f.Category is "source" or "generated"))
+        {
+            if (result.ChangedSymbols.Any(c => string.Equals(c.File, f.Path, StringComparison.OrdinalIgnoreCase))
+                || f.Hunks.All(h => h.NewLen == 0))
+            {
+                continue;
+            }
+
+            var item = Item(4, f.Path, "file", f.Path, $"{f.Added + f.Deleted} changed line(s)");
+            item.Why.Add("its changed lines belong to no unit of the graph (a using directive, a comment or an attribute outside any member), so nothing was measured about them");
+            item.Check.Add("Read the changed lines: a using directive can change which member a name refers to.");
+            items.Add(item);
+        }
+    }
+
+    /// <summary>
+    /// What the sweep found is about the change as a whole: its inputs go through every changed unit at once, so a
+    /// difference cannot be pinned on one of them. It gets an item of its own, placed by the same rule.
+    /// </summary>
+    private static void AddSweep(List<AttentionItem> items, ReviewResult result)
+    {
+        if (result.Sweep is not { TestProject: not null } sweep)
+        {
+            return;
+        }
+
+        var run = result.Comparisons.FirstOrDefault(p => p.Purpose == "sweep" && p.Status == "compared");
+        var nowFails = run?.Count("now-fails") ?? 0;
+        var changed = run is null ? 0 : run.Count("changed") + run.Count("fails-differently") + run.Count("missing-on-new");
+        var shownThrough = run?.Differences.Count(d => d.ByChange == "explained") ?? 0;
+        var unexplained = changed - shownThrough;
+        var doubted = run?.Differences.Count(d => d.Judgement?.Verdict == "not-intended") ?? 0;
+        var believed = run?.Differences.Count(d => d.Judgement?.Verdict == "intended") ?? 0;
+        var tier = Tier(new Signals(
+            ModifiedExisting: false,
+            Dependents: 0,
+            BreakDemonstrated: nowFails > 0,
+            ResultChanged: changed > 0,
+            DetectionGap: false,
+            NotMeasured: run is null,
+            PossibleDefect: sweep.NewFindings.Count > 0 || sweep.Notes.Any(n => n.Contains("does nothing", StringComparison.Ordinal)),
+            Blind: false));
+        var item = new AttentionItem
+        {
+            Tier = tier,
+            TierName = TierNames[tier],
+            What = $"The change as a whole, over {sweep.FromTests + sweep.Altered} inputs nobody chose",
+            Kind = "inputs",
+            File = sweep.TestProject,
+            Dependents = result.ChangedSymbols.Where(c => !c.IsTest).Select(c => c.Dependents).DefaultIfEmpty(0).Max(),
+            Urgency = (nowFails + unexplained > 0 ? 2 : 0) + (doubted > 0 ? 1 : 0),
+        };
+
+        if (run is null)
+        {
+            item.Why.Add($"the inputs were built ({sweep.FromTests} from the existing tests, {sweep.Altered} altered), but they could not be run on both versions: {sweep.Status}");
+            item.Check.Add("The sweep says nothing here. Do not read its silence as a result.");
+            items.Add(item);
+            return;
+        }
+
+        if (nowFails > 0)
+        {
+            var only = run.Differences.Count(d => d.Kind == "now-fails" && d.OnlyWhenAltered);
+            item.Why.Add($"{nowFails} input(s) that worked on the old code do not work on the new" +
+                (only > 0 ? $"; {only} of them only once the input carries an alteration" : string.Empty) +
+                $" (for example: {run.Differences.First(d => d.Kind == "now-fails").Input ?? run.Differences.First(d => d.Kind == "now-fails").Case})");
+        }
+
+        if (unexplained > 0)
+        {
+            item.Why.Add($"{unexplained} input(s) give a different result than on the old code, and the change's own text does not explain it");
+        }
+
+        if (doubted > 0)
+        {
+            item.Why.Add($"a model reads {doubted} of the differences as not what the change set out to do (its opinion, not a measurement)");
+        }
+
+        if (shownThrough > 0)
+        {
+            item.Why.Add($"{shownThrough} input(s) differ only by lines the change itself adds or removes: the change showing through, which is not the same as correct");
+        }
+
+        if (believed > 0)
+        {
+            item.Why.Add($"a model reads {believed} difference(s) as the new functionality (its opinion; they keep their place)");
+        }
+
+        var crashes = sweep.NewFindings.Where(f => f.Kind == "crash").ToList();
+        var silent = sweep.NewFindings.Where(f => f.Kind == "silently-broken").ToList();
+        if (crashes.Count > 0)
+        {
+            item.Why.Add($"{crashes.Count} input(s) that came with the change make the code under test crash on the new code (for example: {crashes[0].Origin} — {crashes[0].Line})");
+        }
+
+        if (silent.Count > 0)
+        {
+            item.Why.Add($"for {silent.Count} input(s) that came with the change the new code produces output that does not compile and reports no error of its own (for example: {silent[0].Origin} — {silent[0].Line})");
+        }
+
+        foreach (var note in sweep.Notes)
+        {
+            item.Why.Add(note);
+        }
+
+        if (sweep.NewFindings.Count > 0)
+        {
+            item.Check.Add("These inputs have no old code to be compared with. Read each: a crash or uncompilable output is a defect whatever the requirement says, unless the input itself is wrong and the tool should have said so.");
+        }
+
+        if (sweep.Notes.Any(n => n.Contains("does nothing", StringComparison.Ordinal)))
+        {
+            item.Check.Add("Under one configuration the change has no effect at all. Decide whether the requirement allows that.");
+        }
+
+        if (tier == 6)
+        {
+            item.Why.Add($"all {run.Cases} inputs give the same result on the old and the new code; that covers these inputs and no others");
+        }
+
+        item.Likelihood.Add($"{sweep.FromTests} input(s) taken from the existing tests of {sweep.TestProject} as they are, {sweep.Altered} altered mechanically; no model chose any of them");
+        foreach (var a in sweep.Alterations)
+        {
+            item.Likelihood.Add($"{a.Inputs} input(s) altered: {a.Label}" + (a.FromChange ? " (taken from the lines the change added)" : string.Empty));
+        }
+
+        item.Likelihood.Add($"{run.Same} of {run.Cases} give the same result on old and new code; {run.Differences.Count} differ" + (run.Unstable > 0 ? $"; {run.Unstable} were unstable on the old code and discarded" : string.Empty));
+        item.Impact.Add("an input here is a whole program handed to the changed code, as a user of the library would write it");
+        item.Detection.Add($"the inputs drove {sweep.ChangedLinesExecuted} of the change's {sweep.ChangedLines} executable line(s), measured on the new code");
+        item.Blind.Add("the harness that feeds the inputs and records the results was written by a model; it was accepted because it runs on both versions, gives the same results twice on the old code and executes the change, not because it was read");
+        if (nowFails > 0)
+        {
+            item.Check.Add("Inputs that worked before no longer do. Decide whether that was meant; if not, the change is wrong.");
+        }
+
+        if (changed > 0)
+        {
+            item.Check.Add("Go through the groups of differences in the report and confirm each is one the requirement asks for.");
+        }
+
+        items.Add(item);
+    }
+
+    /// <summary>
+    /// What a model reads in the requirement that no test shows. It cannot be measured, so it sits with what could
+    /// not be measured, and it is there to be read by the person who knows what was asked.
+    /// </summary>
+    private static void AddRequirement(List<AttentionItem> items, ReviewResult result)
+    {
+        var open = result.Obligations.Where(o => o.Status != "demonstrated").ToList();
+        if (open.Count == 0)
+        {
+            return;
+        }
+
+        var item = Item(4, $"The requirement: {open.Count} of the {result.Obligations.Count} thing(s) it asks for are not shown by any test", "requirement", null, null);
+        item.Urgency = open.Any(o => o.Status == "contradicted") ? 3 : 1;
+        foreach (var o in open.OrderBy(o => o.Status switch { "contradicted" => 0, "not-addressed" => 1, _ => 2 }).Take(6))
+        {
+            item.Why.Add($"a model reads \"{o.Asks}\" as {o.Status.Replace('-', ' ')}: {o.Reason} (its opinion)");
+        }
+
+        item.Likelihood.Add($"{result.Obligations.Count(o => o.Status == "demonstrated")} thing(s) the requirement asks for are shown by a test that fails without the change (the model named the test; that it fails on the old code was measured)");
+        item.Blind.Add("splitting the requirement into things asked for is a model's reading; the words are checked to be in the requirement, their meaning is not");
+        item.Check.Add("Read the requirement against this list. For each thing no test shows, decide whether the change does it.");
+        items.Add(item);
     }
 
     private static void AddWeakTests(List<AttentionItem> items, ReviewResult result)

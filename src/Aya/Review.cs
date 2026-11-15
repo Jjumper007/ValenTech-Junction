@@ -39,7 +39,8 @@ public static partial class ReviewCommand
         Directory.CreateDirectory(outDir);
         var runsDir = Path.Combine(outDir, "runs", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
 
-        var result = new ReviewResult { Repo = repo, Requirement = o.Get("req"), BaseSha = baseSha, HeadRef = headRef, HeadSha = headSha };
+        var requirementText = o.Get("req-file") is { } reqFile ? File.ReadAllText(Path.GetFullPath(reqFile)).Replace("\r", string.Empty).Trim() : null;
+        var result = new ReviewResult { Repo = repo, Requirement = o.Get("req"), RequirementText = requirementText is { Length: > 8000 } ? requirementText[..8000] + " …" : requirementText, BaseSha = baseSha, HeadRef = headRef, HeadSha = headSha };
         var commit = git.Run("log", "-1", "--format=%an%x1f%aI%x1f%s", headSha).Trim().Split('\x1f');
         if (commit.Length == 3)
         {
@@ -175,7 +176,7 @@ public static partial class ReviewCommand
         }
 
         trace.Step("Locate the changed lines in the graph: which units own them");
-        var changed = MapChanges(graph, files);
+        var changed = MapChanges(graph, files, git, baseSha);
         result.ChangedSymbols = changed;
         trace.List(changed.Select(c => $"{c.File.Split('/').Last()}:{Ranges(c.ChangedLines)}  →  {(c.IsTest ? "test " : string.Empty)}{c.Kind} {c.Display}  [layer {c.Layer}, {c.ChangeKind}]"), 40);
         var unmapped = files.Where(f => Path.GetExtension(f.Path) == ".cs" && changed.All(c => c.File != f.Path)).ToList();
@@ -302,7 +303,7 @@ public static partial class ReviewCommand
                     var measured = member.Spans
                         .SelectMany(s => coverage.TryGetValue(s.File, out var ls) ? ls.Where(l => l.Key >= s.Start && l.Key <= s.End) : Enumerable.Empty<KeyValuePair<int, int>>())
                         .ToList();
-                    if (measured.Count == 0 || member.IsGenerated)
+                    if (measured.Count == 0 || member.IsGenerated || changed.Any(x => x.Id == id))
                     {
                         continue;
                     }
@@ -343,10 +344,16 @@ public static partial class ReviewCommand
                     }
                 }
             }
-            else
+            else if (headRuns.All(r => r.Problem is null))
             {
                 // The file never appeared in the coverage report: no test loaded this code at all.
                 c.UncoveredLines.AddRange(c.ChangedLines);
+            }
+            else
+            {
+                // A test project did not build or did not finish, and it may be the one that runs this file. "No
+                // test executes it" would be a claim about tests that never ran, so nothing is concluded.
+                continue;
             }
 
             c.Status = c switch
@@ -369,11 +376,17 @@ public static partial class ReviewCommand
         result.Tests = OutcomesByMethod(headRuns, baseRuns, result.ProbedTests);
 
         // Optional deeper stages. They work on scratch copies of the old and the new code and put every file back.
-        var deeper = new[] { "mutate", "write-tests", "compare", "attack", "attack-brief", "exhaustive" }.Where(o.Has).ToList();
+        var deeper = new[] { "mutate", "write-tests", "compare", "sweep", "attack", "exhaustive", "judge" }.Where(o.Has).ToList();
         var attackFrom = o.Get("attack-from") is { } from ? Path.GetFullPath(from) : null;
         if (attackFrom is not null)
         {
             deeper.Add("attack-from");
+        }
+
+        var writer = o.Get("writer") ?? "gemini";
+        if (writer is not ("gemini" or "claude"))
+        {
+            throw new AyaException("--writer must be gemini or claude");
         }
 
         if (!skipTests && deeper.Count > 0)
@@ -394,8 +407,8 @@ public static partial class ReviewCommand
                 NewTests = result.ProbedTests.Select(p => ModelSession.MethodOf(p.Name)).ToHashSet(StringComparer.Ordinal),
             };
             int Limit(string name, int fallback) => int.TryParse(o.Get(name), out var n) ? n : fallback;
-            var session = new ModelSession(o.Get("writer-model") ?? "claude-opus-5-5", o.Get("writer-effort") ?? "medium");
-            if (deeper.Any(d => d is "write-tests" or "compare" or "attack" or "exhaustive"))
+            var session = new ModelSession(writer, o.Get("writer-model") ?? (writer == "gemini" ? "gemini-4-hydrogen-medium" : "claude-opus-5-5"), o.Get("writer-effort") ?? "medium");
+            if (deeper.Any(d => d is "write-tests" or "compare" or "sweep" or "attack" or "exhaustive" or "judge"))
             {
                 result.TestWriter = session.Name;
             }
@@ -405,6 +418,9 @@ public static partial class ReviewCommand
             {
                 trace.Step("Break each changed line on purpose and see whether any test notices (mutation testing)");
                 (result.Mutants, mutantTexts) = MutationRunner.Run(bench, changed, Limit("max-mutants", 20));
+
+                trace.Step("Undo the change one part at a time and see whether any test needs that part");
+                result.Reverts = MutationRunner.Reverts(bench, changed, files, Limit("max-reverts", 8));
             }
 
             if (o.Has("compare"))
@@ -413,13 +429,24 @@ public static partial class ReviewCommand
                 result.Comparisons = new Comparer(session).CompareModified(bench, graph, result, outDir, Limit("max-probes", 4));
             }
 
+            if (o.Has("sweep"))
+            {
+                trace.Step("Sweep: run inputs nobody chose (the existing tests' own, and altered with what the change adds) through the OLD and the NEW code");
+                var (run, sweep) = new Comparer(session).Sweep(bench, graph, result, outDir, Limit("max-inputs", 240));
+                result.Sweep = sweep;
+                if (run is not null)
+                {
+                    result.Comparisons.Add(run);
+                }
+            }
+
             if (o.Has("write-tests"))
             {
                 trace.Step("Ask a model for tests that fill the gaps, and check every one before believing it");
                 result.ProposedTests = new TestWriter(session).Run(bench, graph, changed, result, mutantTexts, outDir, Limit("max-tests", 4));
             }
 
-            if (o.Has("attack") || o.Has("attack-brief") || attackFrom is not null)
+            if (o.Has("attack") || attackFrom is not null)
             {
                 // Aimed by what was measured so far: the units the list already puts first.
                 trace.Step("Ask a model to break the units at the top of the list; the old code decides who is right");
@@ -429,13 +456,20 @@ public static partial class ReviewCommand
                     .Select(i => byId[i.What])
                     .Where(c => c.CoveredLines.Count + c.UncoveredLines.Count > 0)
                     .ToList();
+                // Every changed unit gets a session of its own, and they all run at once, so none is left out by
+                // default. --max-attacks is there to limit what is spent.
                 var attacker = new Attacker(session);
-                var most = Limit("max-attacks", 3);
+                var most = Limit("max-attacks", int.MaxValue);
                 (result.Attacks, result.AttackWriter) = attackFrom is not null
                     ? (attacker.RunFrom(bench, graph, result, targets, outDir, most, attackFrom), "whoever left the test files in " + attackFrom)
-                    : o.Has("attack-brief")
-                        ? (attacker.Brief(bench, graph, result, targets, outDir, most), null)
-                        : (attacker.Run(bench, graph, result, targets, outDir, most), session.Name);
+                    : (attacker.Run(bench, graph, result, targets, outDir, most), session.Name);
+
+                // Tests that showed a regression on an earlier run of this branch are run again, and this run's are kept.
+                var store = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outDir))!, "_kept", string.Concat(result.HeadRef.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' ? ch : '_')));
+                // A pass on the old code of a test about something the old code does not have is not a verdict.
+                Attacker.WithoutEmptyPasses(result.Attacks, outDir, Comparer.Introduced(result));
+                result.Attacks.AddRange(Attacker.Replay(bench, result.Attacks, outDir, store));
+                Attacker.WithoutEmptyPasses(result.Attacks, outDir, Comparer.Introduced(result));
             }
 
             if (o.Has("exhaustive"))
@@ -446,9 +480,30 @@ public static partial class ReviewCommand
                 result.Exhaustive = summary;
             }
 
+            if (o.Has("judge"))
+            {
+                trace.Step("Judge: ask a model whether each difference the change's own text does not explain was meant (an opinion, shown as one)");
+                result.Judge = new Judge(session).Run(bench, result, outDir);
+                result.Obligations = new Judge(session).Fit(bench, result, outDir);
+            }
+
+            // What Gemini did not answer was written by Claude. The reports name who wrote what they show, so they
+            // must not name only the model that was asked first.
+            if (session.Fallbacks > 0)
+            {
+                var also = $"; {session.Fallbacks} of this run's {session.Sessions} sessions got no answer from it and were answered by claude-opus-5-5 instead" +
+                    (session.QuotaSpent ? ", because its quota ran out during the run" : string.Empty);
+                result.TestWriter = result.TestWriter is null ? null : result.TestWriter + also;
+                result.AttackWriter = result.AttackWriter == session.Name ? result.AttackWriter + also : result.AttackWriter;
+                if (result.Judge is { } judged)
+                {
+                    judged.Writer += also;
+                }
+            }
+
             if (session.Sessions > 0)
             {
-                trace.Info($"model sessions opened in this run: {session.Sessions}");
+                trace.Info($"model sessions opened in this run: {session.Sessions}" + (session.Fallbacks > 0 ? $"; {session.Fallbacks} that Gemini did not answer were asked of Claude instead" : string.Empty));
             }
         }
         else if (!skipTests && blindZone.Count > 0)
@@ -477,6 +532,7 @@ public static partial class ReviewCommand
         var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(evidenceJson))).ToLowerInvariant();
         File.WriteAllText(Path.Combine(outDir, "graph.json"), JsonSerializer.Serialize(GraphExport(graph, changed), Json));
         File.WriteAllText(Path.Combine(outDir, "report.md"), Report.Render(result, hash));
+        File.WriteAllText(Path.Combine(outDir, "summary.md"), Report.Summary(result));
         trace.Info($"wrote report.md, evidence.json, graph.json and pipeline.log to {outDir}");
         trace.Save(Path.Combine(outDir, "pipeline.log"));
         Console.Error.WriteLine();
@@ -496,6 +552,7 @@ public static partial class ReviewCommand
             Console.WriteLine($"  {a.Rank}. [tier {a.Tier}] {a.What}");
         }
 
+        Console.WriteLine($"Summary     {Path.Combine(outDir, "summary.md")}");
         Console.WriteLine($"Report      {Path.Combine(outDir, "report.md")}");
         return result.Evidence.Any(e => e.Status == "fail") ? 1 : 0;
     }
@@ -574,7 +631,7 @@ public static partial class ReviewCommand
     private static string Sanitize(string s) => string.Concat(s.Select(ch => char.IsLetterOrDigit(ch) || ch is '-' or '_' or '.' ? ch : '_'));
 
     /// <summary>Maps changed line ranges onto the innermost declaration that contains them.</summary>
-    private static List<ChangedSymbol> MapChanges(CodeGraph graph, List<FileChange> files)
+    private static List<ChangedSymbol> MapChanges(CodeGraph graph, List<FileChange> files, Git git, string baseSha)
     {
         var byFile = graph.Nodes.Values
             .SelectMany(n => n.Spans.Select(s => (Node: n, Span: s)))
@@ -602,8 +659,10 @@ public static partial class ReviewCommand
                         continue;
                     }
 
+                    // For a pure deletion the diff gives the line before the removed text. The deletion is inside a
+                    // unit only if that unit goes on past that line; at its last line, what was removed came after it.
                     var owner = spans
-                        .Where(x => x.Span.Start <= line && line <= x.Span.End)
+                        .Where(x => x.Span.Start <= line && (hunk.NewLen > 0 ? line <= x.Span.End : line < x.Span.End))
                         .OrderBy(x => x.Node.Kind == "type" ? 1 : 0)
                         .ThenBy(x => x.Span.End - x.Span.Start)
                         .Select(x => x.Node)
@@ -632,14 +691,33 @@ public static partial class ReviewCommand
             }
         }
 
+        // What each changed file declared before the change, read from the old text. Whether a unit is new or
+        // already existed is decided by that, not by which lines the diff happens to mark: a diff can leave the
+        // closing brace of a new method as context, or show a method that only moved as added.
+        var declaredBefore = new Dictionary<string, HashSet<string>?>(StringComparer.OrdinalIgnoreCase);
+        HashSet<string>? Before(FileChange f)
+        {
+            if (!declaredBefore.TryGetValue(f.Path, out var keys))
+            {
+                var old = f.Status == "A" || !f.Path.EndsWith(".cs", StringComparison.OrdinalIgnoreCase) ? null : git.Try("show", $"{baseSha}:{f.OldPath ?? f.Path}");
+                declaredBefore[f.Path] = keys = old is { Ok: true } ? Declarations.In(old.StdOut) : null;
+            }
+
+            return keys;
+        }
+
         return lines.Values
             .Select(e =>
             {
-                // New when every line of the declaration, blank ones included, was added by this change.
+                // Without the old text to go by: new when every line of the declaration was added by this change.
                 var added = e.File.AddedLines().ToHashSet();
                 var wholly = !e.Deletion && e.Node.Spans
                     .Where(s => string.Equals(s.File, e.File.Path, StringComparison.OrdinalIgnoreCase))
                     .All(s => Enumerable.Range(s.Start, s.End - s.Start + 1).All(added.Contains));
+                if (Before(e.File) is { } before && Declarations.KeyOf(e.Node.Display, e.Node.Kind) is { } key)
+                {
+                    wholly = !Declarations.Declares(before, key);
+                }
                 return new ChangedSymbol
                 {
                     Id = e.Node.Id,

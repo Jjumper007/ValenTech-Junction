@@ -1,0 +1,138 @@
+{
+  "branch": "ju26-issue-2129",
+  "command": "aya review --attack-from <the reviewer tests>",
+  "verdicts": [
+    {
+      "request": "A1",
+      "status": "resisted",
+      "tests": 3,
+      "detail": "3 test(s) written to break it pass on the new code",
+      "testFile": "attacks/A1.cs",
+      "failing": []
+    },
+    {
+      "request": "A2",
+      "status": "possible-defect",
+      "tests": 23,
+      "detail": "23 test(s) fail on the new code and the old code cannot judge them (they need code the change added): AyaA2Attack.F3b_GetOnlyCollectionMemberIsSerializedOrDiagnosed, AyaA2Attack.F8d_FormatterThatInheritsTheInterfaceCompilesOrIsDiagnosed, AyaA2Attack.F8f_DataTypeThatIsAlsoALocalMessagePackObjectCompilesOrIsDiagnosed, AyaA2Attack.F6b_SurrogateWithKeyAsPropertyNameIsAccepted, AyaA2Attack.F6a_PrivateFieldOfSurrogateDoesNotNeedAKey, AyaA2Attack.F3c_PropertyWhoseGetterIsOverriddenIsStillSerialized, AyaA2Attack.F8c_GenericFormatterClassCompilesOrIsDiagnosed, AyaA2Attack.F9_FormattersForMemberTypesAreRegisteredInGeneratedResolver, AyaA2Attack.F2a_IgnoreDataMemberOnExternalTypeIsHonoured, AyaA2Attack.F8e_PartialRecordFormatterCompilesOrIsDiagnosed, AyaA2Attack.F8b_FormatterWithPrivateConstructorAndInstanceFieldCompiles, AyaA2Attack.F2b_IgnoreMemberOnExternalMessagePackObjectIsHonoured, AyaA2Attack.F4b_SurrogateErrorInReferencedAssemblyIsReportedAtASourceLocation, AyaA2Attack.F5_ExplicitCallbackReceiverImplementationCompiles, AyaA2Attack.F6d_SurrogateTypeThatCannotBeUsedIsDiagnosed, AyaA2Attack.F7_UseMapModeAppliesToSurrogateWithIntKeys, AyaA2Attack.F6c_MessagePackFormatterAttributeOnSurrogateMemberIsUsedOrDiagnosed, AyaA2Attack.F3a_TypeWithOnlyGetOnlyMembersIsSerializedOrDiagnosed, AyaA2Attack.F8a_FormatterNestedInNonPartialTypeIsDiagnosed, AyaA2Attack.F1b_DefaultOptionsSerializeLocalObjectThatContainsExternalType, AyaA2Attack.F4a_SurrogateErrorInReferencedProjectDoesNotCrashTheGenerator, AyaA2Attack.F1a_DefaultOptionsFindGeneratedFormatterForExternalType, AyaA2Attack.F10_DocumentedUsageHasNoAnalyzerWarningWhenNullableIsEnabled",
+      "testFile": "attacks/A2.cs",
+      "failing": [
+        {
+          "test": "AyaA2Attack.F3b_GetOnlyCollectionMemberIsSerializedOrDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Assert.Contains() Failure: Sub-string not found\r\nString:    \"{\"Id\":1}\"\r\nNot found: \"4242\""
+        },
+        {
+          "test": "AyaA2Attack.F8d_FormatterThatInheritsTheInterfaceCompilesOrIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0534 'PersonFormatter' does not implement inherited abstract member 'BaseFormatter<Person>.Deserialize(ref MessagePackReader, MessagePackSerializerOptions)' @ Test.cs8,21\r\ncompiler: CS0534 'PersonFormatter' does not implement inherited abstract member 'BaseFormatter<Person>.Serialize(ref MessagePackWriter, Person, MessagePackSerializerOptions)' @ Test.cs8,21\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F8f_DataTypeThatIsAlsoALocalMessagePackObjectCompilesOrIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0535 'LocalFormatter' does not implement interface member 'IMessagePackFormatter<Local>.Serialize(ref MessagePackWriter, Local, MessagePackSerializerOptions)' @ Test.cs5,38\r\ncompiler: CS0535 'LocalFormatter' does not implement interface member 'IMessagePackFormatter<Local>.Deserialize(ref MessagePackReader, MessagePackSerializerOptions)' @ Test.cs5,38\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F6b_SurrogateWithKeyAsPropertyNameIsAccepted",
+          "onOld": "cannot-compile",
+          "message": "Assert.DoesNotContain() Failure: Filter matched in collection\r\n             ↓ (pos 0)\r\nCollection: [Test.cs(5,16): error MsgPack004: Properties and fields of MessagePackObject-attributed types require either KeyAttribute or IgnoreMemberAttribute: PersonSurrogate.Id]"
+        },
+        {
+          "test": "AyaA2Attack.F6a_PrivateFieldOfSurrogateDoesNotNeedAKey",
+          "onOld": "cannot-compile",
+          "message": "Assert.DoesNotContain() Failure: Filter matched in collection\r\n             ↓ (pos 0)\r\nCollection: [Test.cs(4,17): error MsgPack004: Properties and fields of MessagePackObject-attributed types require either KeyAttribute or IgnoreMemberAttribute: PersonSurrogate.cache]"
+        },
+        {
+          "test": "AyaA2Attack.F3c_PropertyWhoseGetterIsOverriddenIsStillSerialized",
+          "onOld": "cannot-compile",
+          "message": "Assert.Contains() Failure: Sub-string not found\r\nString:    \"{\"Own\":1}\"\r\nNot found: \"4242\""
+        },
+        {
+          "test": "AyaA2Attack.F8c_GenericFormatterClassCompilesOrIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0246 The type or namespace name 'T' could not be found (are you missing a using directive or an assembly reference?) @ MessagePack.GeneratedMessagePackResolver.g.cs52,48\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F9_FormattersForMemberTypesAreRegisteredInGeneratedResolver",
+          "onOld": "cannot-compile",
+          "message": "Assert.Equal() Failure: Values differ\r\nExpected: \r\nActual:   Shade,Shade[],List<Shade>"
+        },
+        {
+          "test": "AyaA2Attack.F2a_IgnoreDataMemberOnExternalTypeIsHonoured",
+          "onOld": "cannot-compile",
+          "message": "Assert.DoesNotContain() Failure: Sub-string found\r\n                                       ↓ (pos 29)\r\nString: ···\"Id\":1,\"Name\":\"n\",\"Secret\":\"s3cr3t-value\"}\"\r\nFound:  \"s3cr3t-value\""
+        },
+        {
+          "test": "AyaA2Attack.F8e_PartialRecordFormatterCompilesOrIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0535 'PersonFormatter' does not implement interface member 'IMessagePackFormatter<Person>.Serialize(ref MessagePackWriter, Person, MessagePackSerializerOptions)' @ Test.cs2,40\r\ncompiler: CS0535 'PersonFormatter' does not implement interface member 'IMessagePackFormatter<Person>.Deserialize(ref MessagePackReader, MessagePackSerializerOptions)' @ Test.cs2,40\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F8b_FormatterWithPrivateConstructorAndInstanceFieldCompiles",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0122 'PersonFormatter.PersonFormatter()' is inaccessible due to its protection level @ MessagePack.GeneratedMessagePackResolver.g.cs52,24\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F2b_IgnoreMemberOnExternalMessagePackObjectIsHonoured",
+          "onOld": "cannot-compile",
+          "message": "Assert.DoesNotContain() Failure: Sub-string found\r\n                                       ↓ (pos 29)\r\nString: ···\"Id\":1,\"Name\":\"n\",\"Secret\":\"s3cr3t-value\"}\"\r\nFound:  \"s3cr3t-value\""
+        },
+        {
+          "test": "AyaA2Attack.F4b_SurrogateErrorInReferencedAssemblyIsReportedAtASourceLocation",
+          "onOld": "cannot-compile",
+          "message": "MsgPack022 has no source location: error MsgPack022: The surrogate member 'Missing' has no matching public, read-write instance member with the same name and type on 'global::Ext.Person'"
+        },
+        {
+          "test": "AyaA2Attack.F5_ExplicitCallbackReceiverImplementationCompiles",
+          "onOld": "cannot-compile",
+          "message": "The compilation has errors after source generation.\r\ncompiler: CS1061 'Cb' does not contain a definition for 'OnBeforeSerialize' and no accessible extension method 'OnBeforeSerialize' accepting a first argument of type 'Cb' could be found (are you missing a using directive or an assembly reference?) @ Formatters.CbFormatter.g.cs19,9\r\ncompiler: CS1061 'Cb' does not contain a definition for 'OnAfterDeserialize' and no accessible extension method 'OnAfterDeserialize' accepting a first argument of type 'Cb' could be found (are you missing a using directive or an assembly reference?) @ Formatters.C…"
+        },
+        {
+          "test": "AyaA2Attack.F6d_SurrogateTypeThatCannotBeUsedIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "The unusable SurrogateType was ignored without a diagnostic.\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F7_UseMapModeAppliesToSurrogateWithIntKeys",
+          "onOld": "cannot-compile",
+          "message": "Assert.Equal() Failure: Values differ\r\nExpected: 80:80\r\nActual:   80:90"
+        },
+        {
+          "test": "AyaA2Attack.F6c_MessagePackFormatterAttributeOnSurrogateMemberIsUsedOrDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Assert.Contains() Failure: Sub-string not found\r\nString:    \"[1,\"plain-text-name\"]\"\r\nNot found: \"REDACTED\""
+        },
+        {
+          "test": "AyaA2Attack.F3a_TypeWithOnlyGetOnlyMembersIsSerializedOrDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Assert.Contains() Failure: Sub-string not found\r\nString:    \"{}\"\r\nNot found: \"4242\""
+        },
+        {
+          "test": "AyaA2Attack.F8a_FormatterNestedInNonPartialTypeIsDiagnosed",
+          "onOld": "cannot-compile",
+          "message": "Compiler errors and no MessagePack error diagnostic that explains them.\r\ncompiler: CS0260 Missing partial modifier on declaration of type 'Outer'; another partial declaration of this type exists @ Test.cs1,13\r\n"
+        },
+        {
+          "test": "AyaA2Attack.F1b_DefaultOptionsSerializeLocalObjectThatContainsExternalType",
+          "onOld": "cannot-compile",
+          "message": "MessagePack.MessagePackSerializationException : Failed to serialize Holder value.\r\n---- MessagePack.FormatterNotRegisteredException : Ext.Person is not registered in resolver: MessagePack.Resolvers.StandardResolver"
+        },
+        {
+          "test": "AyaA2Attack.F4a_SurrogateErrorInReferencedProjectDoesNotCrashTheGenerator",
+          "onOld": "cannot-compile",
+          "message": "Assert.Null() Failure: Value is not null\r\nExpected: null\r\nActual:   System.ArgumentException: Reported diagnostic 'MsgPack022' has a source location in file 'Ext.cs', which is not part of the compilation being analyzed. (Parameter 'diagnostic')\r\n   at Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalysisContextHelpers.VerifyDiagnosticLocationInCompilation(String id, Location location, Compilation compilation)\r\n   at Microsoft.CodeAnalysis.Diagnostics.DiagnosticAnalysisContextHelpers.VerifyDiagnosticLocationsInCompilation(Diagnostic diagnostic, Compilation compilation)\r\n   at Microsoft.CodeAnal…"
+        },
+        {
+          "test": "AyaA2Attack.F1a_DefaultOptionsFindGeneratedFormatterForExternalType",
+          "onOld": "cannot-compile",
+          "message": "MessagePack.MessagePackSerializationException : Failed to serialize Ext.Person value.\r\n---- MessagePack.FormatterNotRegisteredException : Ext.Person is not registered in resolver: MessagePack.Resolvers.StandardResolver"
+        },
+        {
+          "test": "AyaA2Attack.F10_DocumentedUsageHasNoAnalyzerWarningWhenNullableIsEnabled",
+          "onOld": "cannot-compile",
+          "message": "Assert.DoesNotContain() Failure: Filter matched in collection\r\n             ↓ (pos 0)\r\nCollection: [Test.cs(5,66): warning MsgPack014: Implement IMessagePackFormatter<Ext.Person?> (with nullable annotation)]"
+        }
+      ]
+    }
+  ]
+}

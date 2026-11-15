@@ -14,7 +14,6 @@ public sealed class Workbench
 {
     private string? work;
     private string? oldWork;
-    private string? swarmWork;
 
     public required Git Git { get; init; }
 
@@ -50,12 +49,6 @@ public sealed class Workbench
     /// <summary>A scratch copy of the old code, where probes and attack tests are run for comparison.</summary>
     public string OldWork => this.oldWork ??= this.Git.EnsureWorktree(this.BaseSha, Path.Combine(this.WorktreesRoot, this.BaseSha[..6] + "work"));
 
-    /// <summary>
-    /// A copy of the new code handed to agents that write tests by themselves. Nothing is ever run from it by
-    /// AYA: the test files are taken out of it and run on the other copies.
-    /// </summary>
-    public string SwarmWork => this.swarmWork ??= this.Git.EnsureWorktree(this.HeadSha, Path.Combine(this.WorktreesRoot, this.HeadSha[..6] + "swarm"));
-
     public string? ProjectPath(string name) => this.TestProjects.FirstOrDefault(p => Path.GetFileNameWithoutExtension(p) == name);
 
     /// <summary>The test projects whose run executed the given line: the only ones worth re-running for it.</summary>
@@ -78,7 +71,7 @@ public sealed class Workbench
         }
         finally
         {
-            File.WriteAllBytes(target, original);
+            Files.Retry(() => File.WriteAllBytes(target, original));
         }
     }
 }
@@ -154,6 +147,86 @@ public static class MutationRunner
         return (all, texts);
     }
 
+    /// <summary>
+    /// Undoes the change one part at a time and runs the tests. A part that can be put back as it was with every
+    /// test still passing is a part no test needs: nothing shows what it is for. A part only one test needs is
+    /// worth knowing too. This asks of the change what a deliberate break asks of a line.
+    /// </summary>
+    public static List<Revert> Reverts(Workbench w, List<ChangedSymbol> changed, List<FileChange> files, int max)
+    {
+        var units = changed.Where(c => !c.IsTest && c.Category is "source" or "generated").ToList();
+        var candidates = new List<(FileChange File, Hunk Hunk)>();
+        foreach (var file in files.Where(f => f.Status != "D"))
+        {
+            var executable = units.Where(c => c.File == file.Path).SelectMany(c => c.CoveredLines.Concat(c.UncoveredLines)).ToHashSet();
+            candidates.AddRange(file.Hunks
+                .Where(h => Enumerable.Range(h.NewStart, Math.Max(h.NewLen, 1)).Any(executable.Contains))
+                .Select(h => (file, h)));
+        }
+
+        // One part of every file before a second part of any, so a large file does not take the whole budget.
+        var chosen = candidates
+            .GroupBy(c => c.File.Path, StringComparer.Ordinal)
+            .SelectMany(g => g.Select((c, turn) => (c.File, c.Hunk, Turn: turn)))
+            .OrderBy(c => c.Turn)
+            .Take(max)
+            .ToList();
+        w.Trace.Info($"the change has {candidates.Count} part(s) with executable lines; undoing {chosen.Count} of them, one at a time");
+
+        var reverts = new List<Revert>();
+        foreach (var (file, hunk, _) in chosen)
+        {
+            var end = hunk.NewStart + Math.Max(hunk.NewLen, 1) - 1;
+            // The tests to run are the ones that execute the part, so it is named by a line of it that some test ran.
+            var executed = units.Where(c => c.File == file.Path).SelectMany(c => c.CoveredLines).ToHashSet();
+            var ran = Enumerable.Range(hunk.NewStart, Math.Max(hunk.NewLen, 1)).Where(executed.Contains).ToList();
+            var probe = new Mutant
+            {
+                Id = "V" + (reverts.Count + 1),
+                File = file.Path,
+                Line = ran.Count > 0 ? ran[0] : hunk.NewStart,
+                Description = "put back as it was",
+                Original = hunk.Added.FirstOrDefault()?.Trim() ?? string.Empty,
+            };
+            var clock = Stopwatch.StartNew();
+            var text = Undone(File.ReadAllText(Path.Combine(w.HeadWorktree, file.Path)), hunk);
+            var status = ran.Count > 0 ? w.WithFile(file.Path, text, () => Judge(w, probe)) : "not-covered";
+            var revert = new Revert(
+                probe.Id,
+                file.Path,
+                hunk.NewStart,
+                end,
+                // A part no test even executes is a part no test needs: nothing can fail without it.
+                status switch { "killed" => "needed", "survived" => "not-needed", "not-covered" when ran.Count == 0 => "not-needed", "invalid" => "cannot-be-undone-alone", _ => status },
+                probe.KilledBy.Take(5).ToList(),
+                probe.KilledByCount,
+                probe.CaughtByOldTests);
+            reverts.Add(revert);
+            w.Trace.Info($"{revert.Id,-4} {Path.GetFileName(file.Path)}:{hunk.NewStart}–{end}  " + revert.Status switch
+            {
+                "needed" => $"NEEDED by {revert.NeededByCount} test(s), {revert.NeededByOldTests} of which existed before" + (revert.NeededBy.Count > 0 ? $" (e.g. {revert.NeededBy[0]})" : string.Empty),
+                "not-needed" => "NO TEST NEEDS IT: with the old lines back every test still passes",
+                "cannot-be-undone-alone" => "does not compile without the rest of the change",
+                _ => revert.Status + ": inconclusive",
+            } + $"   {clock.Elapsed.TotalSeconds:0.0}s");
+        }
+
+        return reverts;
+    }
+
+    /// <summary>The text with one part of the change put back as it was. The diff was taken with no context lines.</summary>
+    public static string Undone(string text, Hunk hunk)
+    {
+        var newline = text.Contains("\r\n", StringComparison.Ordinal) ? "\r\n" : "\n";
+        var lines = text.Split('\n').Select(l => l.TrimEnd('\r')).ToList();
+
+        // With nothing added, the header names the line after which the old lines stood.
+        var at = Math.Min(lines.Count, hunk.NewLen == 0 ? hunk.NewStart : hunk.NewStart - 1);
+        lines.RemoveRange(at, Math.Min(hunk.NewLen, lines.Count - at));
+        lines.InsertRange(at, hunk.Removed.Select(l => l.TrimEnd('\r')));
+        return string.Join(newline, lines);
+    }
+
     private static string Judge(Workbench w, Mutant mutant)
     {
         var projects = w.ProjectsExecuting(mutant.File, mutant.Line);
@@ -177,7 +250,8 @@ public static class MutationRunner
 
             // The break did something, but no assertion said so: the run ended without results. Kept apart from
             // "killed", which claims that a named test failed.
-            if (run.Crashed)
+            // The same when it ended cleanly without running a single test: nothing was there to notice anything.
+            if (run.Crashed || run.Results.Count == 0)
             {
                 return "crashed";
             }

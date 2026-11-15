@@ -2,6 +2,9 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace Aya;
 
@@ -81,6 +84,143 @@ public sealed class PatternVariant
     public required int EditedLines { get; init; }
 
     public required List<string> Files { get; init; }
+}
+
+/// <summary>
+/// What a C# file declares, read from its syntax alone, so that the old and the new version of a file can be
+/// compared without building the old one. A declaration is known by the type it is in, its name and, for
+/// methods and constructors, how many parameters it takes.
+/// </summary>
+public static class Declarations
+{
+    /// <summary>The key of every declaration in a source text.</summary>
+    public static HashSet<string> In(string source)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in CSharpSyntaxTree.ParseText(source).GetRoot().DescendantNodes())
+        {
+            switch (node)
+            {
+                case BaseTypeDeclarationSyntax type:
+                    keys.Add(Key(Owner(type), type.Identifier.Text, -1));
+                    if (type is TypeDeclarationSyntax { ParameterList: { } primary })
+                    {
+                        // A record or a type with a primary constructor declares that constructor and, for a
+                        // record, one property per parameter, without a declaration of their own.
+                        keys.Add(Key(type.Identifier.Text, type.Identifier.Text, primary.Parameters.Count));
+                        foreach (var parameter in primary.Parameters)
+                        {
+                            keys.Add(Key(type.Identifier.Text, parameter.Identifier.Text, -1));
+                        }
+                    }
+                    else if (type is TypeDeclarationSyntax declared and (ClassDeclarationSyntax or StructDeclarationSyntax or RecordDeclarationSyntax)
+                        && !declared.Members.OfType<ConstructorDeclarationSyntax>().Any(c => !c.Modifiers.Any(SyntaxKind.StaticKeyword)))
+                    {
+                        // The constructor the compiler supplies when none is written.
+                        keys.Add(Key(type.Identifier.Text, type.Identifier.Text, 0));
+                    }
+
+                    break;
+                case DelegateDeclarationSyntax @delegate:
+                    keys.Add(Key(Owner(@delegate), @delegate.Identifier.Text, -1));
+                    break;
+                case MethodDeclarationSyntax method:
+                    keys.Add(Key(Owner(method), method.Identifier.Text, method.ParameterList.Parameters.Count));
+                    break;
+                case ConstructorDeclarationSyntax constructor:
+                    keys.Add(Key(Owner(constructor), constructor.Identifier.Text, constructor.ParameterList.Parameters.Count));
+                    break;
+                case PropertyDeclarationSyntax property:
+                    keys.Add(Key(Owner(property), property.Identifier.Text, -1));
+                    break;
+                case EventDeclarationSyntax @event:
+                    keys.Add(Key(Owner(@event), @event.Identifier.Text, -1));
+                    break;
+                case EnumMemberDeclarationSyntax member:
+                    keys.Add(Key(Owner(member), member.Identifier.Text, -1));
+                    break;
+                case VariableDeclaratorSyntax variable when variable.Parent?.Parent is FieldDeclarationSyntax or EventFieldDeclarationSyntax:
+                    keys.Add(Key(Owner(variable), variable.Identifier.Text, -1));
+                    break;
+            }
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// The key of a unit of the graph, from the name it is shown by, or null when that name cannot be matched
+    /// against syntax with confidence (operators, indexers, finalizers), in which case nothing is concluded.
+    /// </summary>
+    public static string? KeyOf(string display, string kind)
+    {
+        var paren = display.IndexOf('(');
+        var head = paren >= 0 ? display[..paren] : display;
+        var parts = SplitTopLevel(head, '.');
+        var name = WithoutTypeArguments(parts[^1]);
+        if (name.Length == 0 || name.Contains(' ') || name.StartsWith('~') || name.StartsWith("this", StringComparison.Ordinal) || name.StartsWith("operator", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        var owner = parts.Count > 1 ? WithoutTypeArguments(parts[^2]) : string.Empty;
+        if (kind is "method" or "ctor")
+        {
+            var close = display.LastIndexOf(')');
+            if (paren < 0 || close < paren)
+            {
+                return null;
+            }
+
+            var arguments = display[(paren + 1)..close];
+            return Key(owner, name, string.IsNullOrWhiteSpace(arguments) ? 0 : SplitTopLevel(arguments, ',').Count);
+        }
+
+        return Key(owner, name, -1);
+    }
+
+    /// <summary>
+    /// Whether the old file declared the unit. When the owner does not match but the same name with the same
+    /// number of parameters exists (an explicit interface implementation is shown under the interface's name),
+    /// it is taken as existing: calling something modified sends more attention to it, not less.
+    /// </summary>
+    public static bool Declares(HashSet<string> before, string key) =>
+        before.Contains(key) || before.Any(k => k.EndsWith(key[key.IndexOf('.')..], StringComparison.Ordinal));
+
+    private static string Key(string owner, string name, int parameters) => $"{owner}.{name}/{parameters}";
+
+    private static string Owner(SyntaxNode node) =>
+        node.Ancestors().OfType<BaseTypeDeclarationSyntax>().FirstOrDefault()?.Identifier.Text ?? string.Empty;
+
+    private static string WithoutTypeArguments(string name) => name.IndexOf('<') is var i and > 0 ? name[..i] : name;
+
+    /// <summary>Splits on a separator that is not inside angle brackets, parentheses or square brackets.</summary>
+    private static List<string> SplitTopLevel(string text, char separator)
+    {
+        var parts = new List<string>();
+        var depth = 0;
+        var start = 0;
+        for (var i = 0; i < text.Length; i++)
+        {
+            var ch = text[i];
+            if (ch is '<' or '(' or '[')
+            {
+                depth++;
+            }
+            else if (ch is '>' or ')' or ']')
+            {
+                depth--;
+            }
+            else if (ch == separator && depth == 0)
+            {
+                parts.Add(text[start..i].Trim());
+                start = i + 1;
+            }
+        }
+
+        parts.Add(text[start..].Trim());
+        return parts;
+    }
 }
 
 public static partial class DiffParser
